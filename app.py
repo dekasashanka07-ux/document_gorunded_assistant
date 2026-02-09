@@ -35,6 +35,9 @@ div[data-testid="column"] button {
 button[kind="secondary"] {
     padding: 0.35rem 0.75rem !important;
     font-size: 0.9rem !important;
+
+    white-space: nowrap;
+    min-width: 120px;
 }
 
 </style>
@@ -68,26 +71,24 @@ st.markdown(
 )
 
 # -------- Buttons row --------
-header_spacer, header_buttons = st.columns([7,3])
+spacer, b1, b2 = st.columns([7,1.5,1.5])
 
-with header_buttons:
-    b1, b2 = st.columns([1,1])
+with b1:
+    if st.button("Clear Chat", use_container_width=True):
+        st.session_state.chat = []
 
-    with b1:
-        if st.button("Clear Chat"):
-            st.session_state.chat = []
+with b2:
+    if st.button("Reset Assistant", use_container_width=True):
+        st.session_state.initialized = False
+        st.session_state.chat = []
+        st.session_state.doc_summary = None
+        st.session_state.assistant = None
+        if st.session_state.doc_folder and os.path.isdir(st.session_state.doc_folder):
+            shutil.rmtree(st.session_state.doc_folder, ignore_errors=True)
+        st.session_state.doc_folder = None
+        st.session_state.uploader_key = str(uuid.uuid4())
+        st.success("Assistant reset. Upload documents again.")
 
-    with b2:
-        if st.button("Reset Assistant"):
-            st.session_state.initialized = False
-            st.session_state.chat = []
-            st.session_state.doc_summary = None
-            st.session_state.assistant = None
-            if st.session_state.doc_folder and os.path.isdir(st.session_state.doc_folder):
-                shutil.rmtree(st.session_state.doc_folder, ignore_errors=True)
-            st.session_state.doc_folder = None
-            st.session_state.uploader_key = str(uuid.uuid4())
-            st.success("Assistant reset. Upload documents again.")
 
 
 # -------------------------------------------------
