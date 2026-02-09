@@ -1,0 +1,17 @@
+[theme]
+base="dark"
+
+# Main background (deep navy)
+backgroundColor="#071426"
+
+# Sidebar & cards (slightly lighter)
+secondaryBackgroundColor="#0E223D"
+
+# Accent color (links, buttons, highlights)
+primaryColor="#4F8EF7"
+
+# Text
+textColor="#E6EDF3"
+
+# Font style
+font="sans serif"
