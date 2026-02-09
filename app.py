@@ -9,6 +9,34 @@ import document_assistant as da # Your updated backend
 # Page config
 # -------------------------------------------------
 st.set_page_config(page_title="Document Assistant", layout="wide")
+
+st.markdown("""
+<style>
+
+/* Keep title in one line */
+.main-title {
+    white-space: nowrap;
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+}
+
+/* Reduce empty vertical space */
+.block-container {
+    padding-top: 2rem;
+}
+
+/* Align buttons nicer with header */
+div[data-testid="column"] > div:has(button) {
+    display: flex;
+    align-items: center;
+    height: 70px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
 # -------------------------------------------------
 # Session state init
 # -------------------------------------------------
@@ -29,7 +57,12 @@ if "assistant" not in st.session_state:
 # -------------------------------------------------
 header_left, header_mid, header_right = st.columns([3, 1, 1])
 with header_left:
-    st.title("📄 Document-Grounded Assistant")
+    st.markdown(
+        """
+        <h1 class="main-title">📄 Document-Grounded Assistant</h1>
+        """,
+        unsafe_allow_html=True
+    )
 with header_mid:
     if st.button("Clear Chat"):
         st.session_state.chat = []
