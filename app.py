@@ -26,14 +26,19 @@ st.markdown("""
     padding-top: 1.8rem;
 }
 
-/* Align buttons cleanly (no stretching) */
+/* Align buttons cleanly */
 div[data-testid="column"] button {
     margin-top: 18px;
 }
 
+/* Compact toolbar buttons */
+button[kind="secondary"] {
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.9rem !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
-
 
 
 # -------------------------------------------------
@@ -63,26 +68,27 @@ st.markdown(
 )
 
 # -------- Buttons row --------
-header_spacer, header_mid, header_right = st.columns([6, 1, 1])
+header_spacer, header_buttons = st.columns([7,3])
 
-with header_mid:
-    if st.button("Clear Chat"):
-        st.session_state.chat = []
+with header_buttons:
+    b1, b2 = st.columns([1,1])
 
-with header_right:
-    if st.button("Reset Assistant"):
-        # Reset assistant state
-        st.session_state.initialized = False
-        st.session_state.chat = []
-        st.session_state.doc_summary = None
-        st.session_state.assistant = None
-        # Delete temp document folder
-        if st.session_state.doc_folder and os.path.isdir(st.session_state.doc_folder):
-            shutil.rmtree(st.session_state.doc_folder, ignore_errors=True)
-        st.session_state.doc_folder = None
-        # Reset uploader completely
-        st.session_state.uploader_key = str(uuid.uuid4())
-        st.success("Assistant reset. Upload documents again.")
+    with b1:
+        if st.button("Clear Chat"):
+            st.session_state.chat = []
+
+    with b2:
+        if st.button("Reset Assistant"):
+            st.session_state.initialized = False
+            st.session_state.chat = []
+            st.session_state.doc_summary = None
+            st.session_state.assistant = None
+            if st.session_state.doc_folder and os.path.isdir(st.session_state.doc_folder):
+                shutil.rmtree(st.session_state.doc_folder, ignore_errors=True)
+            st.session_state.doc_folder = None
+            st.session_state.uploader_key = str(uuid.uuid4())
+            st.success("Assistant reset. Upload documents again.")
+
 
 # -------------------------------------------------
 # Sidebar – Upload + Mode + API Key
@@ -165,7 +171,6 @@ if st.sidebar.button("Initialize Assistant"):
             # Generate summary using the new method
             with st.spinner("Generating summary..."):
                 st.session_state.doc_summary = st.session_state.assistant.generate_summary(groq_api_key)
-                # Increment counter if fallback
                 
             st.sidebar.success(f"Ready in {doc_mode.upper()} mode.")
         except Exception as e:
