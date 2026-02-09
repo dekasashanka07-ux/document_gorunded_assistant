@@ -18,23 +18,22 @@ st.markdown("""
     white-space: nowrap;
     font-size: 2.2rem;
     font-weight: 700;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.25rem;
 }
 
 /* Reduce empty vertical space */
 .block-container {
-    padding-top: 2rem;
+    padding-top: 1.8rem;
 }
 
-/* Align buttons nicer with header */
-div[data-testid="column"] > div:has(button) {
-    display: flex;
-    align-items: center;
-    height: 70px;
+/* Align buttons cleanly (no stretching) */
+div[data-testid="column"] button {
+    margin-top: 18px;
 }
 
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # -------------------------------------------------
@@ -55,17 +54,21 @@ if "assistant" not in st.session_state:
 # -------------------------------------------------
 # Header + Controls
 # -------------------------------------------------
-header_left, header_mid, header_right = st.columns([3, 1, 1])
-with header_left:
-    st.markdown(
-        """
-        <h1 class="main-title">📄 Document-Grounded Assistant</h1>
-        """,
-        unsafe_allow_html=True
-    )
+# -------- Title (full width) --------
+st.markdown(
+    """
+    <h1 class="main-title">📄 Document-Grounded Assistant</h1>
+    """,
+    unsafe_allow_html=True
+)
+
+# -------- Buttons row --------
+header_spacer, header_mid, header_right = st.columns([6, 1, 1])
+
 with header_mid:
     if st.button("Clear Chat"):
         st.session_state.chat = []
+
 with header_right:
     if st.button("Reset Assistant"):
         # Reset assistant state
@@ -80,6 +83,7 @@ with header_right:
         # Reset uploader completely
         st.session_state.uploader_key = str(uuid.uuid4())
         st.success("Assistant reset. Upload documents again.")
+
 # -------------------------------------------------
 # Sidebar – Upload + Mode + API Key
 # -------------------------------------------------
