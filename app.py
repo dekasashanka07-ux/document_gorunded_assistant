@@ -91,7 +91,7 @@ if uploaded_files:
 doc_mode_label = st.sidebar.selectbox(
     "Answer Mode",
     ["Corporate (Business/Training/Short Legal – crisp answers)",
-     "Academic (University/IGNOU Modules – detailed concepts)"],
+     "Academic (University/College Modules – detailed concepts)"],
     index=0
 )
 doc_mode = "academic" if "Academic" in doc_mode_label else "corporate"
