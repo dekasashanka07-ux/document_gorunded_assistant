@@ -15,3 +15,7 @@ textColor="#E6EDF3"
 
 # Font style
 font="sans serif"
+
+[server]
+maxUploadSize = 20
+maxMessageSize = 20
