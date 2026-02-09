@@ -1,8 +1,8 @@
 # Document-Grounded Assistant
 
-A reliable, hallucination-free AI assistant that answers questions **strictly from your uploaded documents**. Built with Streamlit for easy use—no coding required after setup.
+A document-grounded QA assistant that answers **strictly** from uploaded files. Built with Streamlit for easy use—no coding required after setup.
 
-This app is useful for professionals, students, researchers, or anyone who needs accurate insights from reports, policies, study materials, legal docs, or books—without fabricated or external information.
+This app is designed for reading and verifying information in reports, policies, study material, and long documents without relying on external knowledge.
 
 ## Why Two Answer Modes? (Corporate vs. Academic)
 
@@ -11,7 +11,7 @@ The app offers **two tailored modes** to match different document types and user
 - **Corporate Mode** (default for business/policy/training docs)  
   Gives crisp, professional answers using bullets, lists, numbered steps, and short paragraphs. Ideal for quick scans of reports, guidelines, contracts, or training materials where clarity and structure matter most.
 
-- **Academic Mode** (for university notes, textbooks, IGNOU-style modules, essays)  
+- **Academic Mode** (for university notes, textbooks, learning modules, essays)  
   Delivers detailed, natural paragraphs with proper sentence flow, logical breaks, and controlled length (e.g., limited sentences for definitions, more for explanations). Presents document-grounded answers in clear explanatory paragraphs suited for study material, with controlled length for readability.
 
 You select the mode once when initializing—no need to switch mid-chat.
@@ -22,8 +22,8 @@ You select the mode once when initializing—no need to switch mid-chat.
 - **Hybrid Retrieval** — Combines semantic search + keyword matching for better accuracy on complex or fragmented layouts (slides, tables, dense text).
 - **Smart Document Handling** — Supports PDF (clean text extraction), TXT, DOCX. Semantic chunking keeps context meaningful.
 - **Summary Generation** — Auto-creates a concise ~120-word overview of the core content (ignores tables of contents, objectives, glossaries).
-- **Bring Your Own Groq API Key (BYOGAK)** — Use your free Groq key for unlimited questions; fallback to a simple 20 questions/day limit if no key is provided (prevents abuse on free hosting).
-- **No Hallucinations** — Temperature=0.0 + strict prompt engineering ensures factual, grounded responses.
+- **Bring Your Own Groq API Key (BYOGAK)** — Use your free Groq key for unlimited questions; fallback to a simple 10 questions/day limit if no key is provided (prevents abuse on free hosting).
+- **Deterministic Responses** — Temperature = 0.0 and constrained prompt engineering reduce variation and prevent speculative answers.
 
 ## Known Limitations
 
@@ -31,6 +31,13 @@ You select the mode once when initializing—no need to switch mid-chat.
 - While grounding minimizes errors, responses depend on document quality and extraction accuracy, so results may not always be perfectly precise.
 - Free Groq tier has rate limits—use your own key for heavy use.
 - App is single-session; multi-user needs paid hosting.
+
+## Data Handling
+
+- Documents are processed only within the running session.
+- They are not stored for training or shared across users.
+- The assistant only receives extracted text required to answer a query.
+- Closing or resetting the app removes the session data.
 
 ## Installation & Local Run (For Developers)
 
@@ -82,6 +89,6 @@ For detailed steps, see: https://docs.streamlit.io/deploy/streamlit-community-cl
 
 MIT License – feel free to fork, modify, and share.
 
-Made with ❤️ by Sashanka Deka  
+Developed by Sashanka Deka  
 Questions? Open an issue or reach out on [LinkedIn](https://www.linkedin.com/in/sashanka-deka) / [X](https://x.com/sashanka_d).
 
