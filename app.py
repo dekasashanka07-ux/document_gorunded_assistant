@@ -7,6 +7,12 @@ from datetime import datetime
 import document_assistant as da
 import fitz
 
+@st.cache_data(show_spinner=False)
+def load_readme():
+    if os.path.exists("README.md"):
+        with open("README.md", "r", encoding="utf-8") as f:
+            return f.read()
+    return "README not found."
 # -------------------------------------------------
 # Upload limits
 # -------------------------------------------------
@@ -63,6 +69,10 @@ with b2:
 # -------------------------------------------------
 # Sidebar – Upload + Mode + API Key
 # -------------------------------------------------
+
+with st.expander("About this assistant", expanded=False):
+    st.markdown(load_readme())
+
 st.sidebar.header("📂 Upload Documents")
 uploaded_files = st.sidebar.file_uploader(
     "Upload (.pdf, .txt, .docx)",
