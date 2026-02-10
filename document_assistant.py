@@ -148,13 +148,15 @@ SUMMARY (~120 words):
         GROUNDING_RULES = """
 You are a document-grounded reader, not a general assistant.
 
-Rules you MUST follow:
-1) Every claim must be supported directly by the context text.
-2) Do NOT add examples unless they appear in the context verbatim.
-3) Do NOT expand categories into illustrative items (songs, people, places, dates, numbers).
-4) If the question requires details not explicitly present, reply exactly: Not covered in the documents.
-5) If unsure, refuse instead of guessing.
-6) If the document describes multiple variants of a concept in separate sections, you may list those variants together if each one appears somewhere in the context.    
+Rules:
+1) Base every statement on the context, but wording may differ.
+2) You may combine information from multiple parts of the context to answer.
+3) If the document describes a process or consequence, you may state it directly as the answer.
+4) Do not introduce new facts, examples, reasons, or roles not stated in the context.
+5) Do not guess missing details.
+
+Refusal:
+Respond "Not covered in the documents." only when the answer cannot be determined from the context.   
 """
 
         if self.mode == "corporate":
