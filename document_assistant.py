@@ -137,7 +137,7 @@ SUMMARY (~120 words):
             context_parts.append(txt)
             total_chars += len(txt)
 
-        context = "\n\n".join(context_parts)
+        context = "\n\n---\n\n".join(context_parts)
 
         # ---------------- GROUNDING RULES ----------------
         GROUNDING_RULES = """
@@ -154,6 +154,9 @@ Rules:
 Aggregation rule:
 Only present a combined list if the document explicitly groups the items under a shared heading, list, or category. 
 Otherwise answer only the directly stated fact instead of constructing a general category summary.
+
+Each section separated by --- is independent context. 
+Do not combine information across sections unless one section alone is incomplete but clearly part of the same statement.
    
 Refusal:
 Respond "Not covered in the documents." only when the answer cannot be determined from the context.   
