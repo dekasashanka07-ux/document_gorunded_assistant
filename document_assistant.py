@@ -117,7 +117,12 @@ SUMMARY (~120 words):
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
 
         vector_nodes = self.vector_retriever.retrieve(question)
-        bm25_nodes = self.bm25_retriever.retrieve(question)
+
+        # If question is definitional/category style → rely more on keyword search
+        broad_query = len(question.split()) <= 6 or question.lower().startswith(("what are", "list", "name"))
+        bm25_k = 12 if broad_query else 5
+        bm25_nodes = self.bm25_retriever.retrieve(question)[:bm25_k]
+
 
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
