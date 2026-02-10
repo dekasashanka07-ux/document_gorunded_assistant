@@ -201,7 +201,7 @@ else:
 st.markdown("""
 <hr style="margin-top: 1rem; margin-bottom: 0.5rem; border: 0; border-top: 1px solid #eee;" />
 <div style="text-align: center; font-size: 11px; color: #555;">
-📄 Conceived &amp; created by <strong style="color: #9e50ba;"> Sashanka Deka</strong>
+📄 Created &amp; developed by <strong style="color: #9e50ba;"> Sashanka Deka</strong>
 <span style="color: #999;"> | </span>
 <a href="https://x.com/sashanka_d" target="_blank" style="color: #1DA1F2; text-decoration: none; margin: 0 4px;">𝕏</a>
 <span style="color: #ccc; margin: 0 2px;">•</span>
