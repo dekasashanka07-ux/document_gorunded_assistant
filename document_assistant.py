@@ -46,11 +46,6 @@ class DocumentAssistant:
         )
         nodes = splitter.get_nodes_from_documents(self.documents)
 
-        max_chunk_chars = 1200 if self.mode == "corporate" else 800
-        for node in nodes:
-            if len(node.text) > max_chunk_chars:
-                node.text = node.text[:max_chunk_chars]
-
         self.index = VectorStoreIndex(nodes)
 
         top_k = 15 if self.mode == "corporate" else 5
