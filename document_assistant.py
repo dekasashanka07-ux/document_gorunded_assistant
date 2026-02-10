@@ -179,16 +179,18 @@ ANSWER:
 
         answer = str(llm.complete(prompt)).strip()
 
-        # HARD GUARD: prevent example hallucinations
-        if any(w in question.lower() for w in ["who", "which", "name", "list", "examples", "songs", "dates", "years"]):
-            if "Not covered in the documents." not in answer:
-                # if answer contains entities not present in context
-                lowered_context = context.lower()
-                tokens = re.findall(r"[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", answer)
-                for t in tokens:
-                    if t.lower() not in lowered_context:
-                        return "Not covered in the documents."
+        # HARD GROUNDING VALIDATION (always run)
+        if "Not covered in the documents." not in answer:
 
+            lowered_context = context.lower()
+
+            # detect named entities / specific items the model invented
+            entities = re.findall(r'"[^"]+"|[A-Z][a-z]+(?:\s[A-Z][a-z]+)+', answer)
+
+            for ent in entities:
+                clean_ent = ent.strip('"').lower()
+                if clean_ent and clean_ent not in lowered_context:
+                    return "Not covered in the documents."
         return answer
 
 # =============================================================================
