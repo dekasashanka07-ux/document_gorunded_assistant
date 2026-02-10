@@ -10,7 +10,7 @@ Mode-aware summary & prompts
 # =============================================================================
 import os
 import re
-from typing import List
+from typing import List, Optional
 
 from llama_index.core import VectorStoreIndex, Document, Settings
 from llama_index.core.node_parser import SemanticSplitterNodeParser
@@ -25,7 +25,6 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 # GLOBAL SETTINGS
 # =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
 # =============================================================================
 # CLASS-BASED ASSISTANT
 # =============================================================================
@@ -39,35 +38,40 @@ class DocumentAssistant:
         self._build_index()
 
     def _build_index(self):
+        # Semantic chunking (meaningful splits based on embeddings)
         splitter = SemanticSplitterNodeParser(
-            buffer_size=1,
-            breakpoint_percentile_threshold=95,
+            buffer_size=1, # 1 sentence buffer for context
+            breakpoint_percentile_threshold=95, # Aggressive splits only when needed
             embed_model=Settings.embed_model
         )
         nodes = splitter.get_nodes_from_documents(self.documents)
-
+        # Mode tweaks: larger chunks for corporate policy docs
+        max_chunk_chars = 1200 if self.mode == "corporate" else 800
+        for node in nodes:
+            if len(node.text) > max_chunk_chars:
+                node.text = node.text[:max_chunk_chars]
         self.index = VectorStoreIndex(nodes)
-
-        top_k = 15 if self.mode == "corporate" else 5
-        similarity_cutoff = 0.15
-
+        # Retrievers - balanced for corporate recall vs academic conciseness
+        top_k = 15 if self.mode == "corporate" else 5 # Higher recall for corporate/policy docs
+        similarity_cutoff = 0.15 # Balanced threshold
         self.vector_retriever = VectorIndexRetriever(
             index=self.index,
             similarity_top_k=top_k,
             node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=similarity_cutoff)]
         )
+        self.bm25_retriever = BM25Retriever.from_defaults(
+            nodes=nodes,
+            similarity_top_k=top_k
+        )
 
-        self.bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=top_k)
-
-    # -------------------------------------------------------------------------
-    # SUMMARY
-    # -------------------------------------------------------------------------
     def generate_summary(self, groq_api_key: str) -> str:
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
-
+        # Mode-aware junk filtering
         if self.mode == "corporate":
+            # Lighter: Keep headings like "Principles", "Privacy Policy"
             skip_patterns = ["table of contents", "objectives", "front matter", "copyright", "disclaimer"]
         else:
+            # Heavier for academic
             skip_patterns = [
                 "learning outcomes", "understand the", "identify the", "describe the",
                 "unit objectives", "block introduction", "after studying this unit",
@@ -75,23 +79,21 @@ class DocumentAssistant:
                 "further reading", "suggested readings", "key words", "glossary",
                 "contents", "introduction", "conclusion", "course coordinator",
             ]
-
         filtered_docs = []
         for doc in self.documents:
-            if not any(p in doc.text.lower() for p in skip_patterns):
+            text_lower = doc.text.lower()
+            if not any(p in text_lower for p in skip_patterns):
                 filtered_docs.append(doc)
-
         if not filtered_docs:
             return "Summary unavailable due to document structure (mostly front-matter)."
-
-        max_context_chars = 8000
+        # Truncate context to avoid Groq token limit
+        max_context_chars = 8000 # ~4000 tokens, safe
         context = ""
         for d in filtered_docs:
-            chunk = d.text[:1000]
+            chunk = d.text[:1000] # Smaller per-doc truncate
             if len(context) + len(chunk) > max_context_chars:
                 break
             context += "\n\n" + chunk
-
         prompt = f"""
 Provide a concise summary of the document in about 120 words.
 Focus on core content only, in one natural paragraph.
@@ -100,34 +102,27 @@ TEXT:
 {context}
 SUMMARY (~120 words):
 """
-        return str(llm.complete(prompt)).strip()
+        response = llm.complete(prompt)
+        return str(response).strip()
 
-    # -------------------------------------------------------------------------
-    # QUESTION ANSWERING
-    # -------------------------------------------------------------------------
     def ask_question(self, question: str, groq_api_key: str) -> str:
         if not self.index:
             return "Index not initialized."
-
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
-
+        # Hybrid retrieval: Combine vector + BM25, simple RRF-style dedup & rank
         vector_nodes = self.vector_retriever.retrieve(question)
-
-        # If question is definitional/category style → rely more on keyword search
-        broad_query = len(question.split()) <= 6 or question.lower().startswith(("what are", "list", "name"))
-        bm25_k = 12 if broad_query else 5
-        bm25_nodes = self.bm25_retriever.retrieve(question)[:bm25_k]
-
-
+        bm25_nodes = self.bm25_retriever.retrieve(question)
+        # Combine & dedup (prefer higher score / vector first)
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
-            if node.node_id not in all_nodes or node.score > all_nodes[node.node_id].score:
-                all_nodes[node.node_id] = node
-
-        retrieved = sorted(all_nodes.values(), key=lambda n: n.score, reverse=True)
+            node_id = node.node_id
+            if node_id not in all_nodes or node.score > all_nodes[node_id].score:
+                all_nodes[node_id] = node
+        retrieved = list(all_nodes.values())
+        retrieved.sort(key=lambda n: n.score, reverse=True) # Higher score first
         if not retrieved:
             return "Not covered in the documents."
-
+        # Format context
         context_parts = []
         total_chars = 0
         for n in retrieved:
@@ -136,74 +131,91 @@ SUMMARY (~120 words):
                 break
             context_parts.append(txt)
             total_chars += len(txt)
-
-        context = "\n\n---\n\n".join(context_parts)
-
-        # ---------------- GROUNDING RULES ----------------
-        GROUNDING_RULES = """
-You are a document-grounded reader, not a general assistant.
-
-Rules:
-1) Base every statement on the context, but wording may differ.
-2) You may combine statements only to complete a single fact, process, or outcome described by the document.
-    Do not combine separate statements to invent a broader category or role.
-3) If the document describes a process or consequence, you may state it directly as the answer.
-4) Do not introduce new facts, examples, reasons, or roles not stated in the context.
-5) Do not guess missing details.
-
-Aggregation rule:
-Only present a combined list if the document explicitly groups the items under a shared heading, list, or category. 
-Otherwise answer only the directly stated fact instead of constructing a general category summary.
-
-Each section separated by --- is independent context. 
-Do not combine information across sections unless one section alone is incomplete but clearly part of the same statement.
-   
-Refusal:
-Respond "Not covered in the documents." only when the answer cannot be determined from the context.   
-"""
-
+        context = "\n\n".join(context_parts)
+        # Mode-aware prompt (softer for natural flow)
         if self.mode == "corporate":
             prompt = f"""
-{GROUNDING_RULES}
-Answer concisely and professionally using only the context.
-Prefer wording close to the document.
-Use bullets if useful.
-
+Answer concisely using ONLY the provided context. Be crisp and professional, but phrase naturally.
+Use bullets/lists if helpful for clarity (e.g., principles, steps).
+When presenting steps, lists, or code from the context, stay very close to the original wording and structure for accuracy.
+For code-like text, describe literally what is shown (e.g., language, endpoints, functions).
+If not directly covered, say exactly: Not covered in the documents.
+Do NOT add external knowledge.
 CONTEXT:
 {context}
-
 QUESTION: {question}
 ANSWER:
 """
         else:
             prompt = f"""
-{GROUNDING_RULES}
-Write clear natural paragraphs using only the context.
-Do not infer beyond the text.
-
+Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
+Academic style: clear, explanatory, no fluff.
+If not directly covered, say exactly: Not covered in the documents.
+Do NOT add external knowledge.
 CONTEXT:
 {context}
-
 QUESTION: {question}
 ANSWER:
 """
-
-        answer = str(llm.complete(prompt)).strip()
-        if not answer:
-            return "Not covered in the documents."
+        response = llm.complete(prompt)
+        answer = str(response).strip()
+        # Academic mode only: sentence cap + complete sentences + paragraph breaks
+        if self.mode == "academic":
+            cap = self._academic_sentence_cap(question)
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            if len(sentences) > cap:
+                answer = " ".join(sentences[:cap]).strip()
+            # Enforce complete ending (trim incomplete last sentence)
+            m = re.search(r'[.!?](?!.*[.!?])', answer, re.S)
+            if m:
+                answer = answer[:m.end()].strip()
+            if not answer.endswith(('.', '!', '?')):
+                answer += "."
+            # Break medium/long answers into paragraphs
+            words = answer.split()
+            if len(words) > 100: # Trigger for medium+ length
+                sentences = re.split(r'(?<=[.!?])\s+', answer) # Re-split after trim
+                if len(sentences) > 3:
+                    para_count = 3 if len(words) > 150 else 2
+                    para_len = len(sentences) // para_count
+                    paras = []
+                    start = 0
+                    for i in range(para_count):
+                        end = start + para_len if i < para_count - 1 else len(sentences)
+                        para_sentences = sentences[start:end]
+                        para_text = " ".join(para_sentences).strip()
+                        if para_text:
+                            paras.append(para_text)
+                        start = end
+                    answer = "\n\n".join(paras)
         return answer
 
-# =============================================================================
-# DOCUMENT LOADER
-# =============================================================================
+    def _academic_sentence_cap(self, question: str) -> int:
+        q = question.lower().strip()
+        if q.startswith(("what is", "define", "meaning of")):
+            return 3
+        if q.startswith(("explain", "discuss", "comment", "examine", "assess", "evaluate", "analyze", "critically assess", "critique", "review", "elaborate")):
+            return 9 # Increased to 9 for more detailed/explained answers
+        return 5
 
+# =============================================================================
+# DOCUMENT LOADER (with PyMuPDF for clean PDF text)
+# =============================================================================
 def load_documents(file_paths: List[str]) -> List[Document]:
     documents = []
     for path in file_paths:
         if path.lower().endswith('.pdf'):
             reader = PyMuPDFReader()
-            documents.extend(reader.load(file_path=path))
+            docs = reader.load(file_path=path)
+            documents.extend(docs)
         else:
+            # TXT/DOCX fallback
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                documents.append(Document(text=f.read()))
+                text = f.read()
+            documents.append(Document(text=text))
+
     return documents
+
+
+
+
