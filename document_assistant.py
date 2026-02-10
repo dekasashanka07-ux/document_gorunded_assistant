@@ -137,7 +137,8 @@ SUMMARY (~120 words):
             prompt = f"""
 Answer concisely using ONLY the provided context. Be crisp and professional, but phrase naturally.
 Use bullets/lists if helpful for clarity (e.g., principles, steps).
-When presenting steps, lists, or code from the context, stay very close to the original wording and structure for accuracy.
+When describing actions, include only actions explicitly stated in the context.
+Do not add implied steps, recommendations, precautions, or follow-up actions.
 For code-like text, describe literally what is shown (e.g., language, endpoints, functions).
 If not directly covered, say exactly: Not covered in the documents.
 Do NOT add external knowledge.
