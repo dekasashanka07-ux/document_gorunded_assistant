@@ -154,6 +154,7 @@ Rules you MUST follow:
 3) Do NOT expand categories into illustrative items (songs, people, places, dates, numbers).
 4) If the question requires details not explicitly present, reply exactly: Not covered in the documents.
 5) If unsure, refuse instead of guessing.
+6) If the document describes multiple variants of a concept in separate sections, you may list those variants together if each one appears somewhere in the context.    
 """
 
         if self.mode == "corporate":
