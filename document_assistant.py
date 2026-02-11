@@ -131,19 +131,19 @@ SUMMARY (~120 words):
         if not retrieved:
             return "Not covered in the documents."
 
-        # -------- PASSAGE LABELLING (CRITICAL CHANGE) --------
+        # -------- NORMAL CONTEXT (ALLOW LOCAL CONTINUITY) --------
         context_parts = []
         total_chars = 0
-        for i, n in enumerate(retrieved, 1):
+        for n in retrieved:
             txt = n.node.text.strip()
             if total_chars + len(txt) > 5500:
                 break
-            context_parts.append(f"[PASSAGE {i}]\n{txt}")
+            context_parts.append(txt)
             total_chars += len(txt)
 
         context = "\n\n".join(context_parts)
 
-        # -------- NEW PROMPT BEHAVIOR --------
+        # -------- UPDATED PROMPT --------
         if self.mode == "corporate":
             prompt = f"""
 {CORPORATE_REASONING_CONTRACT}
@@ -153,10 +153,11 @@ CONTEXT:
 
 QUESTION: {question}
 
-Use the most relevant passage as evidence for the answer.
-Do not mention passages or reasoning steps in the reply.
-Only provide the final answer.
-
+Answer using the provided context.
+Combine information only when it clearly belongs to the same local topic or paragraph.
+Do not combine unrelated sections.
+If the answer is absent, respond: Not covered in the documents.
+Do not mention the context or reasoning.
 
 ANSWER:
 """
@@ -176,6 +177,7 @@ ANSWER:
         response = llm.complete(prompt)
         answer = str(response).strip()
         return answer
+
 
 # =============================================================================
 # DOCUMENT LOADER
