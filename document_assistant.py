@@ -27,31 +27,16 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 # =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
-
 # =============================================================================
-# NEW: CORPORATE MODE REASONING CONTRACT (ANTI-SEMANTIC-COMPLETION)
+# CORPORATE MODE CONTRACT
 # =============================================================================
 CORPORATE_REASONING_CONTRACT = """
-You are answering questions about an internal corporate or explanatory document.
+You are answering questions about a document.
 
-You may combine information from multiple parts of the context.
-However, every statement must be explicitly supported by the text.
-
-Important rules:
-- Do NOT expand the author's meaning
-- Do NOT infer intentions, motivations, or benefits
-- Do NOT add common knowledge
-- Do NOT generalize beyond what is written
-- Do NOT replace abstract themes with specific real-world interpretations
-- You may use semantically equivalent wording if phrasing differs
-- Prefer the shortest complete answer
-
-Your job is to state what the document says, not to explain it.
-
-If a specific detail is not stated in the document,
-respond exactly: Not covered in the documents.
+Every statement must be supported by the text.
+Do not add outside knowledge.
+If the answer is not present, respond exactly: Not covered in the documents.
 """
-
 
 # =============================================================================
 # CLASS-BASED ASSISTANT
@@ -101,29 +86,9 @@ class DocumentAssistant:
     def generate_summary(self, groq_api_key: str) -> str:
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
 
-        if self.mode == "corporate":
-            skip_patterns = ["table of contents", "objectives", "front matter", "copyright", "disclaimer"]
-        else:
-            skip_patterns = [
-                "learning outcomes", "understand the", "identify the", "describe the",
-                "unit objectives", "block introduction", "after studying this unit",
-                "check your progress", "reflection and action", "terminal questions",
-                "further reading", "suggested readings", "key words", "glossary",
-                "contents", "introduction", "conclusion", "course coordinator",
-            ]
-
-        filtered_docs = []
-        for doc in self.documents:
-            text_lower = doc.text.lower()
-            if not any(p in text_lower for p in skip_patterns):
-                filtered_docs.append(doc)
-
-        if not filtered_docs:
-            return "Summary unavailable due to document structure (mostly front-matter)."
-
         max_context_chars = 8000
         context = ""
-        for d in filtered_docs:
+        for d in self.documents:
             chunk = d.text[:1000]
             if len(context) + len(chunk) > max_context_chars:
                 break
@@ -132,7 +97,6 @@ class DocumentAssistant:
         prompt = f"""
 Provide a concise summary of the document in about 120 words.
 Focus on core content only, in one natural paragraph.
-Ignore tables of contents, objectives, front matter, glossaries, exercises.
 
 TEXT:
 {context}
@@ -143,7 +107,7 @@ SUMMARY (~120 words):
         return str(response).strip()
 
     # =============================================================================
-    # QUESTION ANSWERING (CORPORATE MODE FIXED)
+    # QUESTION ANSWERING
     # =============================================================================
     def ask_question(self, question: str, groq_api_key: str) -> str:
         if not self.index:
@@ -167,18 +131,19 @@ SUMMARY (~120 words):
         if not retrieved:
             return "Not covered in the documents."
 
+        # -------- PASSAGE LABELLING (CRITICAL CHANGE) --------
         context_parts = []
         total_chars = 0
-        for n in retrieved:
+        for i, n in enumerate(retrieved, 1):
             txt = n.node.text.strip()
             if total_chars + len(txt) > 5500:
                 break
-            context_parts.append(txt)
+            context_parts.append(f"[PASSAGE {i}]\n{txt}")
             total_chars += len(txt)
 
         context = "\n\n".join(context_parts)
 
-        # ---------------- CORPORATE MODE NEW PROMPT ----------------
+        # -------- NEW PROMPT BEHAVIOR --------
         if self.mode == "corporate":
             prompt = f"""
 {CORPORATE_REASONING_CONTRACT}
@@ -188,21 +153,15 @@ CONTEXT:
 
 QUESTION: {question}
 
-Write a concise natural answer to the question.
-Do not organize into sections or bullet points unless asked.
-Limit the answer to at most 3 sentences.
-Avoid introductory phrases like "The document states".
+First determine which single passage best answers the question.
+Then answer using only that passage.
 
 ANSWER:
 """
-
-
         else:
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
-Academic style: clear, explanatory, no fluff.
 If not directly covered, say exactly: Not covered in the documents.
-Do NOT add external knowledge.
 
 CONTEXT:
 {context}
@@ -215,7 +174,6 @@ ANSWER:
         response = llm.complete(prompt)
         answer = str(response).strip()
         return answer
-
 
 # =============================================================================
 # DOCUMENT LOADER
