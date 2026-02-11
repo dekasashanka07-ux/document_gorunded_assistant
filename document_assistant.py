@@ -24,7 +24,7 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================
-Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 # =============================================================================
 # CLASS-BASED ASSISTANT
 # =============================================================================
@@ -110,12 +110,8 @@ SUMMARY (~120 words):
             return "Index not initialized."
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
         # Hybrid retrieval: Combine vector + BM25, simple RRF-style dedup & rank
-        # BGE models expect instruction-style query
-        vector_query = f"Represent this question for retrieving relevant passages: {question}"
-
-        vector_nodes = self.vector_retriever.retrieve(vector_query)
+        vector_nodes = self.vector_retriever.retrieve(question)
         bm25_nodes = self.bm25_retriever.retrieve(question)
-
         # Combine & dedup (prefer higher score / vector first)
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
@@ -123,7 +119,7 @@ SUMMARY (~120 words):
             if node_id not in all_nodes or node.score > all_nodes[node_id].score:
                 all_nodes[node_id] = node
         retrieved = list(all_nodes.values())
-        retrieved.sort(key=lambda n: (0 if n in vector_nodes else 1, -n.score))
+        retrieved.sort(key=lambda n: n.score, reverse=True) # Higher score first
         if not retrieved:
             return "Not covered in the documents."
         # Format context
