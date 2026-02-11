@@ -32,7 +32,7 @@ Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 # NEW: CORPORATE MODE REASONING CONTRACT (ANTI-SEMANTIC-COMPLETION)
 # =============================================================================
 CORPORATE_REASONING_CONTRACT = """
-You are answering questions about an internal corporate document.
+You are answering questions about an internal corporate or explanatory document.
 
 You may combine information from multiple parts of the context.
 However, every statement must be explicitly supported by the text.
@@ -40,14 +40,19 @@ However, every statement must be explicitly supported by the text.
 Important rules:
 - Do NOT expand the author's meaning
 - Do NOT infer intentions, motivations, or benefits
-- Do NOT add common business practices
+- Do NOT add common knowledge
 - Do NOT generalize beyond what is written
-- If a specific detail is not stated, it is not allowed in the answer
+- Do NOT replace abstract themes with specific real-world interpretations
+- You may use semantically equivalent wording if phrasing differs
+- Prefer the shortest complete answer
+- Do not list multiple points unless the question asks for a list
 
-If the document discusses the topic but does not state the specific detail asked,
+Your job is to state what the document says, not to explain it.
+Write the answer as if responding in a reference manual.
+
+If a specific detail is not stated in the document,
 respond exactly: Not covered in the documents.
 """
-
 
 # =============================================================================
 # CLASS-BASED ASSISTANT
@@ -145,7 +150,7 @@ SUMMARY (~120 words):
         if not self.index:
             return "Index not initialized."
 
-        llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
+        llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=180)
 
         vector_query = f"Represent this question for retrieving relevant passages: {question}"
         vector_nodes = self.vector_retriever.retrieve(vector_query)
@@ -179,13 +184,14 @@ SUMMARY (~120 words):
             prompt = f"""
 {CORPORATE_REASONING_CONTRACT}
 
-Answer concisely and professionally using only the provided context.
-Prefer paraphrasing over explanation.
+Answer using only the provided context.
 
 CONTEXT:
 {context}
 
 QUESTION: {question}
+
+Give only the direct answer to the question.
 
 ANSWER:
 """
