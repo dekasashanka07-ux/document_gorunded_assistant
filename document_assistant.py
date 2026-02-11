@@ -45,14 +45,13 @@ Important rules:
 - Do NOT replace abstract themes with specific real-world interpretations
 - You may use semantically equivalent wording if phrasing differs
 - Prefer the shortest complete answer
-- Do not list multiple points unless the question asks for a list
 
 Your job is to state what the document says, not to explain it.
-Write the answer as if responding in a reference manual.
 
 If a specific detail is not stated in the document,
 respond exactly: Not covered in the documents.
 """
+
 
 # =============================================================================
 # CLASS-BASED ASSISTANT
@@ -184,17 +183,20 @@ SUMMARY (~120 words):
             prompt = f"""
 {CORPORATE_REASONING_CONTRACT}
 
-Answer using only the provided context.
-
 CONTEXT:
 {context}
 
 QUESTION: {question}
 
-Give only the direct answer to the question.
+Write a concise natural answer to the question.
+Do not organize into sections or bullet points unless asked.
+Limit the answer to at most 3 sentences.
+Avoid introductory phrases like "The document states".
 
 ANSWER:
 """
+
+
         else:
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
