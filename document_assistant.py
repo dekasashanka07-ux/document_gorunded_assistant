@@ -65,8 +65,8 @@ Your job is to state what the document says, not to explain it or connect distan
 # CLASS-BASED ASSISTANT
 # =============================================================================
 class DocumentAssistant:
-    def __init__(self, documents: List[Document], mode: str = "corporate"):
-        self.mode = mode
+    def __init__(self, documents: List[Document], **kwargs):
+        self.mode = kwargs.get('mode', 'corporate')
         self.documents = documents
         self.index = None
         self.vector_retriever = None
