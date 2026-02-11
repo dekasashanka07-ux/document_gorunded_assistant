@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Generic Document Assistant – Stable Local-Region QA
-Hybrid retrieval + semantic chunking
-Prevents cross-section blending without over-refusal
+Document Assistant – Verified Grounded QA
+Hybrid retrieval + local region selection + fail-closed answering
 """
 
 # =============================================================================
 # IMPORTS
 # =============================================================================
 import os
+import re
 from typing import List
 
 from llama_index.core import VectorStoreIndex, Document, Settings
@@ -21,7 +21,7 @@ from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.postprocessor import SimilarityPostprocessor
 
 # =============================================================================
-# GLOBAL SETTINGS
+# SETTINGS
 # =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
@@ -30,8 +30,7 @@ Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 # ASSISTANT
 # =============================================================================
 class DocumentAssistant:
-    def __init__(self, documents: List[Document], mode: str = "corporate"):
-        self.mode = mode
+    def __init__(self, documents: List[Document]):
         self.documents = documents
         self.index = None
         self.vector_retriever = None
@@ -50,11 +49,10 @@ class DocumentAssistant:
 
         nodes = splitter.get_nodes_from_documents(self.documents)
 
-        # keep larger coherent chunks
-        max_chunk_chars = 1200
+        # prevent overly long fragments
         for node in nodes:
-            if len(node.text) > max_chunk_chars:
-                node.text = node.text[:max_chunk_chars]
+            if len(node.text) > 1200:
+                node.text = node.text[:1200]
 
         self.index = VectorStoreIndex(nodes)
 
@@ -88,15 +86,12 @@ SUMMARY:
         return str(llm.complete(prompt)).strip()
 
     # -------------------------------------------------------------------------
-    # QUESTION ANSWERING (LOCAL REGION GROUPING)
+    # QA (VERIFIED ANSWERING)
     # -------------------------------------------------------------------------
     def ask_question(self, question: str, groq_api_key: str) -> str:
-        if not self.index:
-            return "Index not initialized."
+        llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=220)
 
-        llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=180)
-
-        # ---- Retrieve ----
+        # ---- retrieval ----
         vector_query = f"Represent this question for retrieving relevant passages: {question}"
         vector_nodes = self.vector_retriever.retrieve(vector_query)
         bm25_nodes = self.bm25_retriever.retrieve(question)
@@ -110,13 +105,13 @@ SUMMARY:
         if not retrieved:
             return "Not covered in the documents."
 
-        # ---- Sort by document order ----
+        # ---- order by document position ----
         retrieved.sort(key=lambda n: (
             n.node.metadata.get("page_label", 0),
             n.node.start_char_idx or 0
         ))
 
-        # ---- Build local clusters ----
+        # ---- cluster into local regions ----
         clusters = []
         current = [retrieved[0]]
 
@@ -124,7 +119,6 @@ SUMMARY:
             prev_end = prev.node.end_char_idx or 0
             cur_start = cur.node.start_char_idx or 0
 
-            # nearby chunks = same region
             if abs(cur_start - prev_end) < 1200:
                 current.append(cur)
             else:
@@ -133,10 +127,9 @@ SUMMARY:
 
         clusters.append(current)
 
-        # ---- Pick best region ----
+        # ---- best region ----
         best_cluster = max(clusters, key=lambda c: sum(n.score for n in c))
 
-        # ---- Build context ----
         context_parts = []
         total = 0
         for n in best_cluster:
@@ -148,20 +141,48 @@ SUMMARY:
 
         context = "\n\n".join(context_parts)
 
-        # ---- Simple grounded prompt ----
+        # ---- verified answering prompt ----
         prompt = f"""
-Answer using only the provided context.
-If the answer is not present, respond exactly: Not covered in the documents.
+You are verifying whether a question can be answered strictly from the provided document.
+
+STEP 1:
+Decide if the answer is explicitly present in the context.
+Respond with exactly one token: ANSWERABLE or NOT_ANSWERABLE.
+
+STEP 2:
+If ANSWERABLE, provide the answer using only the text.
+If NOT_ANSWERABLE, output exactly: Not covered in the documents.
+
+Never use outside knowledge.
+
+FORMAT:
+VERDICT: <ANSWERABLE or NOT_ANSWERABLE>
+ANSWER: <final answer or Not covered in the documents>
 
 CONTEXT:
 {context}
 
 QUESTION: {question}
-
-ANSWER:
 """
 
-        return str(llm.complete(prompt)).strip()
+        raw = str(llm.complete(prompt)).strip()
+
+        # ---- parse output safely ----
+        verdict_match = re.search(r"VERDICT:\s*(ANSWERABLE|NOT_ANSWERABLE)", raw)
+        answer_match = re.search(r"ANSWER:\s*(.*)", raw, re.DOTALL)
+
+        if not verdict_match:
+            return "Not covered in the documents."
+
+        verdict = verdict_match.group(1)
+
+        if verdict == "NOT_ANSWERABLE":
+            return "Not covered in the documents."
+
+        if answer_match:
+            return answer_match.group(1).strip()
+
+        return "Not covered in the documents."
 
 
 # =============================================================================
