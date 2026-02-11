@@ -29,35 +29,27 @@ Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
 # =============================================================================
-# CORPORATE MODE REASONING CONTRACT WITH LOCALITY CONSTRAINT
+# NEW: CORPORATE MODE REASONING CONTRACT (ANTI-SEMANTIC-COMPLETION)
 # =============================================================================
 CORPORATE_REASONING_CONTRACT = """
 You are answering questions about an internal corporate or explanatory document.
 
-ALLOWED AGGREGATION:
-You may combine information from multiple chunks ONLY if they belong to:
-- The SAME paragraph (across chunk boundaries)
-- The SAME numbered or bulleted list
-- Directly continuing text under the SAME heading
+You may combine information from multiple parts of the context.
+However, every statement must be explicitly supported by the text.
 
-FORBIDDEN AGGREGATION:
-- Do NOT combine information from DIFFERENT headings, even if topics seem related
-- Do NOT combine information from separate sections, policies, or independent discussions
-- Do NOT merge conceptually similar statements that appear in different parts of the document
-
-GROUNDING RULES:
-- Every statement must be explicitly supported in the text
+Important rules:
 - Do NOT expand the author's meaning
 - Do NOT infer intentions, motivations, or benefits
 - Do NOT add common knowledge
 - Do NOT generalize beyond what is written
-- Use semantically equivalent wording if phrasing differs
+- Do NOT replace abstract themes with specific real-world interpretations
+- You may use semantically equivalent wording if phrasing differs
 - Prefer the shortest complete answer
+
+Your job is to state what the document says, not to explain it.
 
 If a specific detail is not stated in the document,
 respond exactly: Not covered in the documents.
-
-Your job is to state what the document says, not to explain it or connect distant ideas.
 """
 
 
@@ -65,8 +57,8 @@ Your job is to state what the document says, not to explain it or connect distan
 # CLASS-BASED ASSISTANT
 # =============================================================================
 class DocumentAssistant:
-    def __init__(self, documents: List[Document], **kwargs):
-        self.mode = kwargs.get('mode', 'corporate')
+    def __init__(self, documents: List[Document], mode: str = "corporate"):
+        self.mode = mode
         self.documents = documents
         self.index = None
         self.vector_retriever = None
@@ -175,39 +167,6 @@ SUMMARY (~120 words):
         if not retrieved:
             return "Not covered in the documents."
 
-        # ===== HEADING-AWARE FILTERING =====
-        # Only apply if chunks appear to come from different headings
-        if self.mode == "corporate" and len(retrieved) > 1:
-            # Simple heuristic: look for common heading patterns
-            def guess_heading(text):
-                lines = text.strip().split('\n')
-                for line in lines[:3]:  # Check first few lines
-                    line = line.strip()
-                    if line and (line.isupper() or 
-                                line.endswith(':') or
-                                re.match(r'^[A-Z][a-z]+ [A-Z][a-z]+', line) or
-                                len(line) < 100 and not line.endswith('.')):
-                        return line[:50]  # Return heading candidate
-                return None
-            
-            headings = []
-            for n in retrieved:
-                h = guess_heading(n.node.text)
-                headings.append(h)
-            
-            # If we detect multiple distinct headings, keep only chunks from first heading
-            if len(set(headings)) > 1:
-                first_heading = headings[0] if headings else None
-                if first_heading:
-                    filtered = []
-                    for i, n in enumerate(retrieved):
-                        h = headings[i] if i < len(headings) else None
-                        if h == first_heading or h is None:
-                            filtered.append(n)
-                    if filtered:  # Only replace if we have something left
-                        retrieved = filtered
-        # ===== END HEADING-AWARE FILTERING =====
-
         context_parts = []
         total_chars = 0
         for n in retrieved:
@@ -219,7 +178,7 @@ SUMMARY (~120 words):
 
         context = "\n\n".join(context_parts)
 
-        # ---------------- CORPORATE MODE PROMPT ----------------
+        # ---------------- CORPORATE MODE NEW PROMPT ----------------
         if self.mode == "corporate":
             prompt = f"""
 {CORPORATE_REASONING_CONTRACT}
@@ -231,11 +190,13 @@ QUESTION: {question}
 
 Write a concise natural answer to the question.
 Do not organize into sections or bullet points unless asked.
-Keep the answer concise but complete. Typically 1-4 sentences.
+Limit the answer to at most 3 sentences.
 Avoid introductory phrases like "The document states".
 
 ANSWER:
 """
+
+
         else:
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
