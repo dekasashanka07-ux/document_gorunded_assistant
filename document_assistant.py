@@ -153,8 +153,10 @@ CONTEXT:
 
 QUESTION: {question}
 
-First determine which single passage best answers the question.
-Then answer using only that passage.
+Use the most relevant passage as evidence for the answer.
+Do not mention passages or reasoning steps in the reply.
+Only provide the final answer.
+
 
 ANSWER:
 """
