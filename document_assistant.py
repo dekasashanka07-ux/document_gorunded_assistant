@@ -136,8 +136,9 @@ SUMMARY (~120 words):
         if self.mode == "corporate":
             prompt = f"""
 Answer using ONLY the provided context.
-Maximum 3 sentences.
-No bullet points, no lists, no markdown.
+If the context clearly lists items (such as phases, steps, traits, or components),
+reproduce those items as a numbered or bulleted list, preserving the same items and count.
+Otherwise, answer in up to 3 sentences with no bullet points, no lists, no markdown.
 No introductory phrases.
 Just state the information directly.
 
