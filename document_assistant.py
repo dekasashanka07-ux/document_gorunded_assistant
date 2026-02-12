@@ -162,6 +162,9 @@ A rule sentence is a sentence that explicitly:
 - allows an action
 - states something violates the Code or law
 
+A sentence may include conditions, lists, or clauses joined by commas or semicolons.
+If they belong to the same grammatical sentence, treat it as ONE sentence.
+
 You may determine the answer using the meaning of that ONE sentence.
 
 You may apply simple logical equivalence:
@@ -175,10 +178,9 @@ You may apply simple logical equivalence:
 Do NOT combine multiple sentences.
 
 STEP 2 — If such a sentence exists:
-Return TWO lines:
+Return EXACTLY TWO LINES AND NOTHING ELSE:
 
-Line 1: A short conclusion derived directly from that sentence.
-Allowed forms:
+Line 1 must be exactly one of these tokens:
 Yes
 No
 Required
@@ -186,8 +188,6 @@ Prohibited
 Allowed
 Must
 Must not
-
-Do not add explanations.
 
 Line 2: The exact sentence from the document in quotes.
 
@@ -200,10 +200,23 @@ Strict rules:
 - Never summarize
 - Never explain reasoning
 - Never use outside knowledge
-- If the answer depends on multiple clauses, refuse
+- Refuse only when the answer requires information from more than one separate sentence
 - The conclusion must be mechanically supported by the quoted sentence
 
+OUTPUT FORMAT IS STRICT AND MUST BE FOLLOWED EXACTLY.
 
+Your response must contain exactly one of the following:
+
+CASE A — Answer found:
+Line 1: One allowed token only
+Line 2: One single quoted sentence
+
+No extra text before or after.
+No additional sentences.
+No explanations.
+
+CASE B — Not found:
+Not covered in the documents.
 
 CONTEXT:
 {context}
