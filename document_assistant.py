@@ -45,15 +45,23 @@ class DocumentAssistant:
             embed_model=Settings.embed_model
         )
         nodes = splitter.get_nodes_from_documents(self.documents)
-        # Mode tweaks: larger chunks for corporate policy docs
-        max_chunk_chars = 1200 if self.mode == "corporate" else 800
+        # Mode tweaks: larger chunks for corporate/compliance, smaller for academic
+        if self.mode == "academic":
+            max_chunk_chars = 800
+        else:
+            max_chunk_chars = 1200  # corporate & compliance need more context
+        
         for node in nodes:
             if len(node.text) > max_chunk_chars:
                 node.text = node.text[:max_chunk_chars]
         self.index = VectorStoreIndex(nodes)
-        # Retrievers - balanced for corporate recall vs academic conciseness
-        top_k = 15 if self.mode == "corporate" else 5 # Higher recall for corporate/policy docs
-        similarity_cutoff = 0.15 # Balanced threshold
+        # Retrievers - higher recall for corporate/compliance, precision for academic
+        if self.mode == "academic":
+            top_k = 5
+        else:
+            top_k = 15  # corporate & compliance need broader retrieval
+        
+        similarity_cutoff = 0.15
         self.vector_retriever = VectorIndexRetriever(
             index=self.index,
             similarity_top_k=top_k,
@@ -67,10 +75,10 @@ class DocumentAssistant:
     def generate_summary(self, groq_api_key: str) -> str:
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
         # Mode-aware junk filtering
-        if self.mode == "corporate":
+        if self.mode == "corporate" or self.mode == "compliance":
             # Lighter: Keep headings like "Principles", "Privacy Policy"
             skip_patterns = ["table of contents", "objectives", "front matter", "copyright", "disclaimer"]
-        else:
+        else:  # academic
             # Heavier for academic
             skip_patterns = [
                 "learning outcomes", "understand the", "identify the", "describe the",
@@ -87,10 +95,10 @@ class DocumentAssistant:
         if not filtered_docs:
             return "Summary unavailable due to document structure (mostly front-matter)."
         # Truncate context to avoid Groq token limit
-        max_context_chars = 8000 # ~4000 tokens, safe
+        max_context_chars = 8000
         context = ""
         for d in filtered_docs:
-            chunk = d.text[:1000] # Smaller per-doc truncate
+            chunk = d.text[:1000]
             if len(context) + len(chunk) > max_context_chars:
                 break
             context += "\n\n" + chunk
@@ -119,7 +127,7 @@ SUMMARY (~120 words):
             if node_id not in all_nodes or node.score > all_nodes[node_id].score:
                 all_nodes[node_id] = node
         retrieved = list(all_nodes.values())
-        retrieved.sort(key=lambda n: n.score, reverse=True) # Higher score first
+        retrieved.sort(key=lambda n: n.score, reverse=True)
         if not retrieved:
             return "Not covered in the documents."
         # Format context
@@ -132,7 +140,9 @@ SUMMARY (~120 words):
             context_parts.append(txt)
             total_chars += len(txt)
         context = "\n\n".join(context_parts)
-        # Mode-aware prompt (softer for natural flow)
+        
+        # ============= MODE-SPECIFIC PROMPTS =============
+        
         if self.mode == "corporate":
             prompt = f"""
 Answer using ONLY the provided context.
@@ -149,7 +159,31 @@ QUESTION: {question}
 
 ANSWER:
 """
-        else:
+        
+        elif self.mode == "compliance":
+            prompt = f"""
+You are answering questions about a legal, compliance, or policy document.
+
+STRICT RULES:
+- Answer using ONLY the provided context.
+- Do NOT combine information from different sections, headings, or topics.
+- If the answer is stated as a list, reproduce it VERBATIM as a numbered or bulleted list.
+- If the answer is a prohibition, restriction, obligation, or exception, use the EXACT language from the document.
+- Do NOT paraphrase rules, policies, or compliance requirements.
+- Do NOT add interpretations, examples, or "in other words".
+- Do NOT use introductory phrases.
+- If the exact answer is not in the provided context, say exactly:
+  "Not covered in the documents."
+
+CONTEXT:
+{context}
+
+QUESTION: {question}
+
+ANSWER:
+"""
+        
+        else:  # academic
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
 Academic style: clear, explanatory, no fluff.
@@ -163,8 +197,10 @@ QUESTION: {question}
 
 ANSWER:
 """
+        
         response = llm.complete(prompt)
         answer = str(response).strip()
+        
         # Academic mode only: sentence cap + complete sentences + paragraph breaks
         if self.mode == "academic":
             cap = self._academic_sentence_cap(question)
@@ -179,8 +215,8 @@ ANSWER:
                 answer += "."
             # Break medium/long answers into paragraphs
             words = answer.split()
-            if len(words) > 100: # Trigger for medium+ length
-                sentences = re.split(r'(?<=[.!?])\s+', answer) # Re-split after trim
+            if len(words) > 100:
+                sentences = re.split(r'(?<=[.!?])\s+', answer)
                 if len(sentences) > 3:
                     para_count = 3 if len(words) > 150 else 2
                     para_len = len(sentences) // para_count
@@ -201,7 +237,7 @@ ANSWER:
         if q.startswith(("what is", "define", "meaning of")):
             return 3
         if q.startswith(("explain", "discuss", "comment", "examine", "assess", "evaluate", "analyze", "critically assess", "critique", "review", "elaborate")):
-            return 9 # Increased to 9 for more detailed/explained answers
+            return 9
         return 5
 
 # =============================================================================
@@ -215,13 +251,7 @@ def load_documents(file_paths: List[str]) -> List[Document]:
             docs = reader.load(file_path=path)
             documents.extend(docs)
         else:
-            # TXT/DOCX fallback
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 text = f.read()
             documents.append(Document(text=text))
-
     return documents
-
-
-
-
