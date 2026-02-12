@@ -139,18 +139,13 @@ SUMMARY (~120 words):
         # =========================
         if self.mode == "compliance":
 
-            # semantic first to find meaning, bm25 to anchor wording
-            retrieved = vector_nodes if vector_nodes else bm25_nodes
+            # prefer lexical precision
+            retrieved = bm25_nodes if bm25_nodes else vector_nodes
             if not retrieved:
                 return "Not covered in the documents."
 
             # single clause only
-            # take small local neighborhood instead of single fragment
-            context_parts = []
-            for n in retrieved[:3]:
-                context_parts.append(n.node.text.strip())
-
-            context = "\n\n".join(context_parts)
+            context = retrieved[0].node.text.strip()
 
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
