@@ -3,13 +3,10 @@
 Generic Document Assistant – Streamlit-compatible
 Multi-chunk, document-grounded QA (STRICT + LOW HALLUCINATION)
 
-Compliance mode is specialized for clause-level verification.
+Compliance mode specialized for clause-level verification.
 Other modes unchanged.
 """
 
-# =============================================================================
-# IMPORTS
-# =============================================================================
 import os
 import re
 from typing import List, Optional
@@ -23,14 +20,9 @@ from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.postprocessor import SimilarityPostprocessor
 
-# =============================================================================
-# GLOBAL SETTINGS
-# =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# =============================================================================
-# CLASS-BASED ASSISTANT
-# =============================================================================
+
 class DocumentAssistant:
     def __init__(self, documents: List[Document], mode: str = "corporate"):
         self.mode = mode
@@ -40,7 +32,9 @@ class DocumentAssistant:
         self.bm25_retriever = None
         self._build_index()
 
-    # ---------------- YES/NO DETECTOR (NEW) ----------------
+    # -------------------------------------------------
+    # YES/NO QUESTION DETECTOR
+    # -------------------------------------------------
     def _is_yes_no_question(self, question: str) -> bool:
         q = question.lower().strip()
         starters = (
@@ -49,9 +43,29 @@ class DocumentAssistant:
         )
         return q.startswith(starters)
 
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
+    # NEW: SENTENCE TARGETING FOR COMPLIANCE
+    # -------------------------------------------------
+    def _extract_relevant_sentences(self, context: str, question: str) -> str:
+        q_words = set(re.findall(r'\b\w+\b', question.lower()))
+        sentences = re.split(r'(?<=[.!?])\s+', context)
+
+        scored = []
+        for s in sentences:
+            words = set(re.findall(r'\b\w+\b', s.lower()))
+            overlap = len(q_words & words)
+            if overlap > 0:
+                scored.append((overlap, s))
+
+        if not scored:
+            return context
+
+        scored.sort(reverse=True)
+        return "\n".join([s for _, s in scored[:2]])
+
+    # -------------------------------------------------
     # INDEX BUILD
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
     def _build_index(self):
 
         splitter = SemanticSplitterNodeParser(
@@ -83,9 +97,9 @@ class DocumentAssistant:
 
         self.bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=top_k)
 
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
     # SUMMARY
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
     def generate_summary(self, groq_api_key: str) -> str:
 
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
@@ -128,9 +142,9 @@ SUMMARY (~120 words):
 """
         return str(llm.complete(prompt)).strip()
 
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
     # QUESTION ANSWERING
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------
     def ask_question(self, question: str, groq_api_key: str) -> str:
 
         if not self.index:
@@ -153,7 +167,11 @@ SUMMARY (~120 words):
             context_parts = []
             for n in retrieved[:3]:
                 context_parts.append(n.node.text.strip())
+
             context = "\n\n".join(context_parts)
+
+            # 🔴 NEW FILTER
+            context = self._extract_relevant_sentences(context, question)
 
             is_binary = self._is_yes_no_question(question)
 
@@ -196,7 +214,7 @@ ANSWER:
             return str(llm.complete(prompt)).strip()
 
         # =========================
-        # OTHER MODES (unchanged)
+        # OTHER MODES
         # =========================
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
@@ -246,6 +264,7 @@ ANSWER:
 """
 
         return str(llm.complete(prompt)).strip()
+
 
 # =============================================================================
 # DOCUMENT LOADER
