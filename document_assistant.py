@@ -3,10 +3,13 @@
 Generic Document Assistant – Streamlit-compatible
 Multi-chunk, document-grounded QA (STRICT + LOW HALLUCINATION)
 
-Compliance mode specialized for clause-level verification.
+Compliance mode is specialized for clause-level verification.
 Other modes unchanged.
 """
 
+# =============================================================================
+# IMPORTS
+# =============================================================================
 import os
 import re
 from typing import List, Optional
@@ -20,9 +23,14 @@ from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.postprocessor import SimilarityPostprocessor
 
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-
+# =============================================================================
+# CLASS-BASED ASSISTANT
+# =============================================================================
 class DocumentAssistant:
     def __init__(self, documents: List[Document], mode: str = "corporate"):
         self.mode = mode
@@ -32,40 +40,9 @@ class DocumentAssistant:
         self.bm25_retriever = None
         self._build_index()
 
-    # -------------------------------------------------
-    # YES/NO QUESTION DETECTOR
-    # -------------------------------------------------
-    def _is_yes_no_question(self, question: str) -> bool:
-        q = question.lower().strip()
-        starters = (
-            "is ", "are ", "can ", "should ", "may ", "do ", "does ",
-            "did ", "will ", "would ", "could ", "has ", "have ", "had "
-        )
-        return q.startswith(starters)
-
-    # -------------------------------------------------
-    # NEW: SENTENCE TARGETING FOR COMPLIANCE
-    # -------------------------------------------------
-    def _extract_relevant_sentences(self, context: str, question: str) -> str:
-        q_words = set(re.findall(r'\b\w+\b', question.lower()))
-        sentences = re.split(r'(?<=[.!?])\s+', context)
-
-        scored = []
-        for s in sentences:
-            words = set(re.findall(r'\b\w+\b', s.lower()))
-            overlap = len(q_words & words)
-            if overlap > 0:
-                scored.append((overlap, s))
-
-        if not scored:
-            return context
-
-        scored.sort(reverse=True)
-        return "\n".join([s for _, s in scored[:2]])
-
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     # INDEX BUILD
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     def _build_index(self):
 
         splitter = SemanticSplitterNodeParser(
@@ -76,8 +53,10 @@ class DocumentAssistant:
 
         nodes = splitter.get_nodes_from_documents(self.documents)
 
+        # Chunk size rules
         max_chunk_chars = 800 if self.mode == "academic" else 1200
 
+        # --- SAFE TRIM (prevents broken numbered clauses) ---
         for node in nodes:
             if len(node.text) > max_chunk_chars:
                 trimmed = node.text[:max_chunk_chars]
@@ -97,9 +76,9 @@ class DocumentAssistant:
 
         self.bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=top_k)
 
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     # SUMMARY
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     def generate_summary(self, groq_api_key: str) -> str:
 
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
@@ -142,9 +121,9 @@ SUMMARY (~120 words):
 """
         return str(llm.complete(prompt)).strip()
 
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     # QUESTION ANSWERING
-    # -------------------------------------------------
+    # ---------------------------------------------------------------------
     def ask_question(self, question: str, groq_api_key: str) -> str:
 
         if not self.index:
@@ -160,48 +139,38 @@ SUMMARY (~120 words):
         # =========================
         if self.mode == "compliance":
 
+            # semantic first to find meaning, bm25 to anchor wording
             retrieved = vector_nodes if vector_nodes else bm25_nodes
             if not retrieved:
                 return "Not covered in the documents."
 
+            # single clause only
+            # take small local neighborhood instead of single fragment
             context_parts = []
             for n in retrieved[:3]:
                 context_parts.append(n.node.text.strip())
 
             context = "\n\n".join(context_parts)
 
-            # 🔴 NEW FILTER
-            context = self._extract_relevant_sentences(context, question)
+            prompt = f"""
+You are verifying a policy document.
 
-            is_binary = self._is_yes_no_question(question)
+Your task is NOT to explain the policy.
+Your task is to check whether the policy text resolves the question.
 
-            if is_binary:
-                prompt = f"""
-You are answering a YES/NO compliance question using a policy document.
-
-If the context states a prohibition, answer:
-No, <exact sentence from the document>
-
-If the context states a permission or requirement, answer:
-Yes, <exact sentence from the document>
-
-If the context does not clearly decide the question, reply exactly:
+Decision process:
+1) Check if the policy statement answers the question in meaning,
+   even if the wording is different.
+2) If it does, output ONLY the exact sentence(s) from the document.
+3) If it does not, reply exactly:
 Not covered in the documents.
 
-CONTEXT:
-{context}
-
-QUESTION: {question}
-
-ANSWER:
-"""
-            else:
-                prompt = f"""
-You are answering questions about a legal, compliance, or policy document.
-
-Return only the exact sentence from the document that answers the question.
-If no exact answer exists, reply exactly:
-Not covered in the documents.
+Strict rules:
+- Never paraphrase
+- Never shorten
+- Never combine multiple rules
+- Do not use general principles
+- Only output the clause that resolves the question
 
 CONTEXT:
 {context}
@@ -214,7 +183,7 @@ ANSWER:
             return str(llm.complete(prompt)).strip()
 
         # =========================
-        # OTHER MODES
+        # OTHER MODES (unchanged)
         # =========================
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
@@ -264,7 +233,6 @@ ANSWER:
 """
 
         return str(llm.complete(prompt)).strip()
-
 
 # =============================================================================
 # DOCUMENT LOADER
