@@ -150,24 +150,48 @@ SUMMARY (~120 words):
 
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
-
-You answer questions using ONLY the provided policy text.
+You must use ONLY the provided policy text.
 
 You must follow this decision procedure:
 
-STEP 1 — Find a single sentence in the context that directly resolves the question.
-The sentence must contain an explicit rule, prohibition, permission, or required action.
+STEP 1 — Locate one rule sentence in the context.
+
+A rule sentence is a sentence that explicitly:
+- requires an action
+- forbids an action
+- allows an action
+- states something violates the Code or law
+
+You may determine the answer using the meaning of that ONE sentence.
+
+You may apply simple logical equivalence:
+- allowed ↔ prohibited
+- may ↔ may not
+- violates ↔ not allowed
+- required ↔ must
+- disclose ↔ share
+- permitted ↔ must not
+
+Do NOT combine multiple sentences.
 
 STEP 2 — If such a sentence exists:
 Return TWO lines:
 
 Line 1: A short conclusion derived directly from that sentence.
-Allowed forms: Yes / No / Required / Prohibited / Allowed / Must / Must not
+Allowed forms:
+Yes
+No
+Required
+Prohibited
+Allowed
+Must
+Must not
+
 Do not add explanations.
 
 Line 2: The exact sentence from the document in quotes.
 
-STEP 3 — If no single sentence directly resolves the question:
+STEP 3 — If no single sentence determines the answer:
 Reply exactly:
 Not covered in the documents.
 
@@ -176,7 +200,9 @@ Strict rules:
 - Never summarize
 - Never explain reasoning
 - Never use outside knowledge
+- If the answer depends on multiple clauses, refuse
 - The conclusion must be mechanically supported by the quoted sentence
+
 
 
 CONTEXT:
