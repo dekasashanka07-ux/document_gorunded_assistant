@@ -45,7 +45,6 @@ class DocumentAssistant:
             embed_model=Settings.embed_model
         )
         nodes = splitter.get_nodes_from_documents(self.documents)
-        
         # Mode tweaks: larger chunks for corporate/compliance, smaller for academic
         if self.mode == "academic":
             max_chunk_chars = 800
@@ -55,26 +54,21 @@ class DocumentAssistant:
         for node in nodes:
             if len(node.text) > max_chunk_chars:
                 node.text = node.text[:max_chunk_chars]
-        
         self.index = VectorStoreIndex(nodes)
-        
-        # ============= MODE-SPECIFIC RETRIEVAL PARAMETERS =============
+        # Retrievers - higher recall for corporate/compliance, precision for academic
         if self.mode == "academic":
             top_k = 5
-            similarity_cutoff = 0.15
         elif self.mode == "compliance":
-            top_k = 25  # Higher recall for scattered policy rules
-            similarity_cutoff = 0.12  # More forgiving matching for policy wording
-        else:  # corporate
-            top_k = 15
-            similarity_cutoff = 0.15
+            top_k = 18  # MODEST INCREASE for compliance
+        else:
+            top_k = 15  # corporate stays at 15
         
+        similarity_cutoff = 0.15  # UNCHANGED for all modes
         self.vector_retriever = VectorIndexRetriever(
             index=self.index,
             similarity_top_k=top_k,
             node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=similarity_cutoff)]
         )
-        
         self.bm25_retriever = BM25Retriever.from_defaults(
             nodes=nodes,
             similarity_top_k=top_k
@@ -82,7 +76,6 @@ class DocumentAssistant:
 
     def generate_summary(self, groq_api_key: str) -> str:
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
-        
         # Mode-aware junk filtering
         if self.mode == "corporate" or self.mode == "compliance":
             # Lighter: Keep headings like "Principles", "Privacy Policy"
@@ -96,16 +89,13 @@ class DocumentAssistant:
                 "further reading", "suggested readings", "key words", "glossary",
                 "contents", "introduction", "conclusion", "course coordinator",
             ]
-        
         filtered_docs = []
         for doc in self.documents:
             text_lower = doc.text.lower()
             if not any(p in text_lower for p in skip_patterns):
                 filtered_docs.append(doc)
-        
         if not filtered_docs:
             return "Summary unavailable due to document structure (mostly front-matter)."
-        
         # Truncate context to avoid Groq token limit
         max_context_chars = 8000
         context = ""
@@ -114,7 +104,6 @@ class DocumentAssistant:
             if len(context) + len(chunk) > max_context_chars:
                 break
             context += "\n\n" + chunk
-        
         prompt = f"""
 Provide a concise summary of the document in about 120 words.
 Focus on core content only, in one natural paragraph.
@@ -126,55 +115,23 @@ SUMMARY (~120 words):
         response = llm.complete(prompt)
         return str(response).strip()
 
-    def _guess_heading(self, text: str) -> Optional[str]:
-        """Simple heuristic to guess section heading from text."""
-        lines = text.strip().split('\n')
-        for line in lines[:3]:
-            line = line.strip()
-            if line and (line.isupper() or 
-                        line.endswith(':') or
-                        re.match(r'^[A-Z][a-z]+ [A-Z][a-z]+', line) or
-                        (len(line) < 100 and not line.endswith('.'))):
-                return line[:50]
-        return None
-
     def ask_question(self, question: str, groq_api_key: str) -> str:
         if not self.index:
             return "Index not initialized."
-        
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
-        
         # Hybrid retrieval: Combine vector + BM25, simple RRF-style dedup & rank
         vector_nodes = self.vector_retriever.retrieve(question)
         bm25_nodes = self.bm25_retriever.retrieve(question)
-        
         # Combine & dedup (prefer higher score / vector first)
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
             node_id = node.node_id
             if node_id not in all_nodes or node.score > all_nodes[node_id].score:
                 all_nodes[node_id] = node
-        
         retrieved = list(all_nodes.values())
         retrieved.sort(key=lambda n: n.score, reverse=True)
-        
         if not retrieved:
             return "Not covered in the documents."
-        
-        # ============= COMPLIANCE MODE: SECTION FILTERING =============
-        if self.mode == "compliance" and len(retrieved) > 1:
-            # Try to keep chunks from the same major section
-            primary_heading = self._guess_heading(retrieved[0].node.text)
-            if primary_heading:
-                filtered = []
-                for n in retrieved:
-                    h = self._guess_heading(n.node.text)
-                    if h == primary_heading or h is None:
-                        filtered.append(n)
-                if filtered:  # Only replace if we have something left
-                    retrieved = filtered
-        # ==============================================================
-        
         # Format context
         context_parts = []
         total_chars = 0
@@ -184,7 +141,6 @@ SUMMARY (~120 words):
                 break
             context_parts.append(txt)
             total_chars += len(txt)
-        
         context = "\n\n".join(context_parts)
         
         # ============= MODE-SPECIFIC PROMPTS =============
@@ -208,18 +164,15 @@ ANSWER:
         
         elif self.mode == "compliance":
             prompt = f"""
-You are answering questions about a legal, compliance, or policy document.
+Answer using ONLY the provided context.
 
-STRICT RULES:
-- Answer using ONLY the provided context.
-- Do NOT combine information from different sections, headings, or topics.
-- If the answer is stated as a list, reproduce it VERBATIM as a numbered or bulleted list with one item per line.
-- If the answer is a prohibition, restriction, obligation, or exception, use the EXACT language from the document.
-- Do NOT paraphrase rules, policies, or compliance requirements.
-- Do NOT add interpretations, examples, or "in other words".
+RULES:
+- If the answer contains a list, use bullet points with one item per line.
+- Use the EXACT language from the document for rules and prohibitions.
+- Do NOT paraphrase policies or requirements.
 - Do NOT use introductory phrases.
-- Start your answer with a capital letter.
-- If the exact answer is not in the provided context, say exactly:
+- Do NOT USE ALL CAPS. Write in normal sentence case.
+- If the exact answer is not in the context, say exactly:
   "Not covered in the documents."
 
 CONTEXT:
@@ -277,7 +230,6 @@ ANSWER:
                             paras.append(para_text)
                         start = end
                     answer = "\n\n".join(paras)
-        
         return answer
 
     def _academic_sentence_cap(self, question: str) -> int:
