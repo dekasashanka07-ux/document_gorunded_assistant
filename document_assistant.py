@@ -157,9 +157,14 @@ You are answering questions about a legal, compliance, or policy document.
 
 RULES:
 - Answer ONLY if the context explicitly states the answer.
-- Otherwise reply exactly: Not covered in the documents.
+- If the answer is not a direct extractable sentence or list from the context, reply exactly:
+  Not covered in the documents.
 - Use the document wording.
 - Do not infer or summarize.
+
+If multiple statements are present, output only the statement that directly answers the question.
+Do not explain the document structure.
+Do not describe what is or is not listed.
 
 CONTEXT:
 {context}
@@ -167,6 +172,7 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:
+
 """
             return str(llm.complete(prompt)).strip()
 
