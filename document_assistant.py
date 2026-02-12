@@ -154,30 +154,25 @@ You must use ONLY the provided policy text.
 
 You must follow this decision procedure:
 
-STEP 1 — Locate one rule sentence in the context.
+STEP 1 — Locate the smallest continuous text span in the context that determines the answer.
 
-A rule sentence is a sentence that explicitly:
-- requires an action
-- forbids an action
-- allows an action
-- states something violates the Code or law
+The span must be one or two adjacent sentences that express a single rule.
+Do not combine distant sections or separate rules.
 
-A sentence may include conditions, lists, or clauses joined by commas or semicolons.
-If they belong to the same grammatical sentence, treat it as ONE sentence.
+A rule states that an action or situation is allowed, required, or prohibited,
+or that it violates the Code or law.
 
-You may determine the answer using the meaning of that ONE sentence.
+You may determine the answer using the meaning of ONLY that span.
 
 You may apply simple logical equivalence:
-- allowed ↔ prohibited
-- may ↔ may not
-- violates ↔ not allowed
-- required ↔ must
-- disclose ↔ share
-- permitted ↔ must not
+allowed ↔ prohibited
+may ↔ may not
+violates ↔ not allowed
+required ↔ must
+disclose ↔ share
+permitted ↔ must not
 
-Do NOT combine multiple sentences.
-
-STEP 2 — If such a sentence exists:
+STEP 2 — If such a span exists:
 Return EXACTLY TWO LINES AND NOTHING ELSE:
 
 Line 1 must be exactly one of these tokens:
@@ -189,34 +184,28 @@ Allowed
 Must
 Must not
 
-Line 2: The exact sentence from the document in quotes.
+Line 2: The exact text span from the document in quotes.
 
-STEP 3 — If no single sentence determines the answer:
+STEP 3 — If no single continuous span determines the answer:
 Reply exactly:
 Not covered in the documents.
 
 Strict rules:
-- Never combine multiple sentences
-- Never summarize
-- Never explain reasoning
-- Never use outside knowledge
-- Refuse only when the answer requires information from more than one separate sentence
-- The conclusion must be mechanically supported by the quoted sentence
+- Do not combine separate rules
+- Do not summarize
+- Do not explain reasoning
+- Do not use outside knowledge
+- The conclusion must be supported by the quoted span
 
 OUTPUT FORMAT IS STRICT AND MUST BE FOLLOWED EXACTLY.
 
-Your response must contain exactly one of the following:
-
 CASE A — Answer found:
 Line 1: One allowed token only
-Line 2: One single quoted sentence
-
-No extra text before or after.
-No additional sentences.
-No explanations.
+Line 2: One quoted span
 
 CASE B — Not found:
 Not covered in the documents.
+
 
 CONTEXT:
 {context}
