@@ -144,17 +144,40 @@ SUMMARY (~120 words):
             if not retrieved:
                 return "Not covered in the documents."
 
-            # single clause only
-            context = retrieved[0].node.text.strip()
+
+            context = "\n".join(n.node.text.strip() for n in retrieved[:2])
+
 
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
 
-RULES:
-- Answer ONLY if the context explicitly states the answer.
-- Otherwise reply exactly: Not covered in the documents.
-- Use the document wording.
-- Do not infer or summarize.
+You answer questions using ONLY the provided policy text.
+
+You must follow this decision procedure:
+
+STEP 1 — Find a single sentence in the context that directly resolves the question.
+The sentence must contain an explicit rule, prohibition, permission, or required action.
+
+STEP 2 — If such a sentence exists:
+Return TWO lines:
+
+Line 1: A short conclusion derived directly from that sentence.
+Allowed forms: Yes / No / Required / Prohibited / Allowed / Must / Must not
+Do not add explanations.
+
+Line 2: The exact sentence from the document in quotes.
+
+STEP 3 — If no single sentence directly resolves the question:
+Reply exactly:
+Not covered in the documents.
+
+Strict rules:
+- Never combine multiple sentences
+- Never summarize
+- Never explain reasoning
+- Never use outside knowledge
+- The conclusion must be mechanically supported by the quoted sentence
+
 
 CONTEXT:
 {context}
