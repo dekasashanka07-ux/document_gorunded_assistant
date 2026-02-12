@@ -145,7 +145,12 @@ SUMMARY (~120 words):
                 return "Not covered in the documents."
 
             # single clause only
-            context = retrieved[0].node.text.strip()
+            # take small local neighborhood instead of single fragment
+            context_parts = []
+            for n in retrieved[:3]:
+                context_parts.append(n.node.text.strip())
+
+            context = "\n\n".join(context_parts)
 
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
