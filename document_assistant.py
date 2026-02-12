@@ -154,28 +154,31 @@ You must use ONLY the provided policy text.
 
 You must follow this decision procedure:
 
-STEP 1 — Locate the smallest continuous text span in the context that determines the answer.
+STEP 1 — Locate one rule sentence in the context.
 
-The span must be one or two adjacent sentences that express a single rule.
-Do not combine distant sections or separate rules.
+A rule sentence is a sentence that explicitly:
+- requires an action
+- forbids an action
+- allows an action
+- states something violates the Code or law
 
-A rule states that an action or situation is allowed, required, or prohibited,
-or that it violates the Code or law.
-
-You may determine the answer using the meaning of ONLY that span.
+You may determine the answer using the meaning of that ONE sentence.
 
 You may apply simple logical equivalence:
-allowed ↔ prohibited
-may ↔ may not
-violates ↔ not allowed
-required ↔ must
-disclose ↔ share
-permitted ↔ must not
+- allowed ↔ prohibited
+- may ↔ may not
+- violates ↔ not allowed
+- required ↔ must
+- disclose ↔ share
+- permitted ↔ must not
 
-STEP 2 — If such a span exists:
-Return EXACTLY TWO LINES AND NOTHING ELSE:
+Do NOT combine multiple sentences.
 
-Line 1 must be exactly one of these tokens:
+STEP 2 — If such a sentence exists:
+Return TWO lines:
+
+Line 1: A short conclusion derived directly from that sentence.
+Allowed forms:
 Yes
 No
 Required
@@ -184,27 +187,22 @@ Allowed
 Must
 Must not
 
-Line 2: The exact text span from the document in quotes.
+Do not add explanations.
 
-STEP 3 — If no single continuous span determines the answer:
+Line 2: The exact sentence from the document in quotes.
+
+STEP 3 — If no single sentence determines the answer:
 Reply exactly:
 Not covered in the documents.
 
 Strict rules:
-- Do not combine separate rules
-- Do not summarize
-- Do not explain reasoning
-- Do not use outside knowledge
-- The conclusion must be supported by the quoted span
+- Never combine multiple sentences
+- Never summarize
+- Never explain reasoning
+- Never use outside knowledge
+- If the answer depends on multiple clauses, refuse
+- The conclusion must be mechanically supported by the quoted sentence
 
-OUTPUT FORMAT IS STRICT AND MUST BE FOLLOWED EXACTLY.
-
-CASE A — Answer found:
-Line 1: One allowed token only
-Line 2: One quoted span
-
-CASE B — Not found:
-Not covered in the documents.
 
 
 CONTEXT:
