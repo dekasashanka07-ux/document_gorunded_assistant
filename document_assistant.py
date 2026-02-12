@@ -139,8 +139,8 @@ SUMMARY (~120 words):
         # =========================
         if self.mode == "compliance":
 
-            # prefer lexical precision
-            retrieved = bm25_nodes if bm25_nodes else vector_nodes
+            # semantic first to find meaning, bm25 to anchor wording
+            retrieved = vector_nodes if vector_nodes else bm25_nodes
             if not retrieved:
                 return "Not covered in the documents."
 
