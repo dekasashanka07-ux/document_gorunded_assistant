@@ -153,24 +153,13 @@ SUMMARY (~120 words):
             context = "\n\n".join(context_parts)
 
             prompt = f"""
-You are verifying a policy document.
+You are answering questions about a legal, compliance, or policy document.
 
-Your task is NOT to explain the policy.
-Your task is to check whether the policy text resolves the question.
-
-Decision process:
-1) Check if the policy statement answers the question in meaning,
-   even if the wording is different.
-2) If it does, output ONLY the exact sentence(s) from the document.
-3) If it does not, reply exactly:
-Not covered in the documents.
-
-Strict rules:
-- Never paraphrase
-- Never shorten
-- Never combine multiple rules
-- Do not use general principles
-- Only output the clause that resolves the question
+RULES:
+- Answer ONLY if the context explicitly states the answer.
+- Otherwise reply exactly: Not covered in the documents.
+- Use the document wording.
+- Do not infer or summarize.
 
 CONTEXT:
 {context}
@@ -179,7 +168,6 @@ QUESTION: {question}
 
 ANSWER:
 """
-
             return str(llm.complete(prompt)).strip()
 
         # =========================
