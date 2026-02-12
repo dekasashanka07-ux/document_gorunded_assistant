@@ -40,6 +40,15 @@ class DocumentAssistant:
         self.bm25_retriever = None
         self._build_index()
 
+    # ---------------- YES/NO DETECTOR (NEW) ----------------
+    def _is_yes_no_question(self, question: str) -> bool:
+        q = question.lower().strip()
+        starters = (
+            "is ", "are ", "can ", "should ", "may ", "do ", "does ",
+            "did ", "will ", "would ", "could ", "has ", "have ", "had "
+        )
+        return q.startswith(starters)
+
     # ---------------------------------------------------------------------
     # INDEX BUILD
     # ---------------------------------------------------------------------
@@ -53,10 +62,8 @@ class DocumentAssistant:
 
         nodes = splitter.get_nodes_from_documents(self.documents)
 
-        # Chunk size rules
         max_chunk_chars = 800 if self.mode == "academic" else 1200
 
-        # --- SAFE TRIM (prevents broken numbered clauses) ---
         for node in nodes:
             if len(node.text) > max_chunk_chars:
                 trimmed = node.text[:max_chunk_chars]
@@ -139,40 +146,29 @@ SUMMARY (~120 words):
         # =========================
         if self.mode == "compliance":
 
-            # semantic first to find meaning, bm25 to anchor wording
             retrieved = vector_nodes if vector_nodes else bm25_nodes
             if not retrieved:
                 return "Not covered in the documents."
 
-            # single clause only
-            # take small local neighborhood instead of single fragment
             context_parts = []
             for n in retrieved[:3]:
                 context_parts.append(n.node.text.strip())
-
             context = "\n\n".join(context_parts)
 
-            prompt = f"""
-You are answering questions about a legal, compliance, or policy document.
+            is_binary = self._is_yes_no_question(question)
 
-QUESTION TYPE HANDLING:
-If the question asks whether something is allowed, required, or prohibited:
+            if is_binary:
+                prompt = f"""
+You are answering a YES/NO compliance question using a policy document.
 
-- If the context contains a prohibition, answer starting with "No," followed by the exact sentence from the document.
-- If the context contains a requirement or permission, answer starting with "Yes," followed by the exact sentence from the document.
-- If neither is clearly stated, reply exactly:
+If the context states a prohibition, answer:
+No, <exact sentence from the document>
+
+If the context states a permission or requirement, answer:
+Yes, <exact sentence from the document>
+
+If the context does not clearly decide the question, reply exactly:
 Not covered in the documents.
-
-RULES:
-- Answer ONLY if the context contains a statement that resolves the question.
-- Otherwise reply exactly: Not covered in the documents.
-- Use the wording from the document for the answer.
-- Do not infer beyond the statement.
-- Do not summarize multiple rules into one.
-
-If multiple statements are present, output only the statement that answers the question.
-Do not explain the document structure.
-Do not describe what is or is not listed.
 
 CONTEXT:
 {context}
@@ -181,6 +177,22 @@ QUESTION: {question}
 
 ANSWER:
 """
+            else:
+                prompt = f"""
+You are answering questions about a legal, compliance, or policy document.
+
+Return only the exact sentence from the document that answers the question.
+If no exact answer exists, reply exactly:
+Not covered in the documents.
+
+CONTEXT:
+{context}
+
+QUESTION: {question}
+
+ANSWER:
+"""
+
             return str(llm.complete(prompt)).strip()
 
         # =========================
