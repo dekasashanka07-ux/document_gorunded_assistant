@@ -164,16 +164,24 @@ ANSWER:
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
 
-STRICT RULES:
+STEP 1 — VERIFY ANSWERABILITY
+Check whether the context explicitly states the information requested in the question.
+
+If the document does not directly answer the question,
+reply exactly:
+Not covered in the documents.
+
+Do not use related policies.
+Do not infer roles, steps, responsibilities, timelines, or outcomes.
+
+STEP 2 — EXACT EXTRACTION (ONLY IF STEP 1 SUCCEEDS)
 - Answer using ONLY the provided context.
-- Do NOT combine information from different sections, headings, or topics.
-- If the answer is stated as a list, reproduce it VERBATIM as a numbered or bulleted list.
-- If the answer is a prohibition, restriction, obligation, or exception, use the EXACT language from the document.
-- Do NOT paraphrase rules, policies, or compliance requirements.
-- Do NOT add interpretations, examples, or "in other words".
-- Do NOT use introductory phrases.
-- If the exact answer is not in the provided context, say exactly:
-  "Not covered in the documents."
+- Do NOT combine unrelated sections.
+- Reproduce rules using the document’s original wording.
+- If a list exists, reproduce the FULL list.
+- Do NOT summarize or shorten legal requirements.
+- Do NOT add explanations or interpretations.
+- No introductory phrases.
 
 CONTEXT:
 {context}
@@ -182,7 +190,7 @@ QUESTION: {question}
 
 ANSWER:
 """
-        
+       
         else:  # academic
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
