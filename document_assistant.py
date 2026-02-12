@@ -155,8 +155,16 @@ SUMMARY (~120 words):
             prompt = f"""
 You are answering questions about a legal, compliance, or policy document.
 
+QUESTION TYPE HANDLING:
+If the question asks whether something is allowed, required, or prohibited:
+
+- If the context contains a prohibition, answer starting with "No," followed by the exact sentence from the document.
+- If the context contains a requirement or permission, answer starting with "Yes," followed by the exact sentence from the document.
+- If neither is clearly stated, reply exactly:
+Not covered in the documents.
+
 RULES:
-- Answer ONLY if the context contains a statement that directly resolves the question.
+- Answer ONLY if the context contains a statement that resolves the question.
 - Otherwise reply exactly: Not covered in the documents.
 - Use the wording from the document for the answer.
 - Do not infer beyond the statement.
@@ -172,8 +180,6 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:
-
-
 """
             return str(llm.complete(prompt)).strip()
 
