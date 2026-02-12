@@ -58,12 +58,10 @@ class DocumentAssistant:
         # Retrievers - higher recall for corporate/compliance, precision for academic
         if self.mode == "academic":
             top_k = 5
-        elif self.mode == "compliance":
-            top_k = 18  # MODEST INCREASE for compliance
         else:
-            top_k = 15  # corporate stays at 15
+            top_k = 15  # corporate & compliance need broader retrieval
         
-        similarity_cutoff = 0.15  # UNCHANGED for all modes
+        similarity_cutoff = 0.15
         self.vector_retriever = VectorIndexRetriever(
             index=self.index,
             similarity_top_k=top_k,
@@ -164,15 +162,17 @@ ANSWER:
         
         elif self.mode == "compliance":
             prompt = f"""
-Answer using ONLY the provided context.
+You are answering questions about a legal, compliance, or policy document.
 
-RULES:
-- If the answer contains a list, use bullet points with one item per line.
-- Use the EXACT language from the document for rules and prohibitions.
-- Do NOT paraphrase policies or requirements.
+STRICT RULES:
+- Answer using ONLY the provided context.
+- Do NOT combine information from different sections, headings, or topics.
+- If the answer is stated as a list, reproduce it VERBATIM as a numbered or bulleted list.
+- If the answer is a prohibition, restriction, obligation, or exception, use the EXACT language from the document.
+- Do NOT paraphrase rules, policies, or compliance requirements.
+- Do NOT add interpretations, examples, or "in other words".
 - Do NOT use introductory phrases.
-- Do NOT USE ALL CAPS. Write in normal sentence case.
-- If the exact answer is not in the context, say exactly:
+- If the exact answer is not in the provided context, say exactly:
   "Not covered in the documents."
 
 CONTEXT:
