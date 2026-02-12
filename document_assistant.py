@@ -156,13 +156,13 @@ SUMMARY (~120 words):
 You are answering questions about a legal, compliance, or policy document.
 
 RULES:
-- Answer ONLY if the context explicitly states the answer.
-- If the answer is not a direct extractable sentence or list from the context, reply exactly:
-  Not covered in the documents.
-- Use the document wording.
-- Do not infer or summarize.
+- Answer ONLY if the context contains a statement that directly resolves the question.
+- Otherwise reply exactly: Not covered in the documents.
+- Use the wording from the document for the answer.
+- Do not infer beyond the statement.
+- Do not summarize multiple rules into one.
 
-If multiple statements are present, output only the statement that directly answers the question.
+If multiple statements are present, output only the statement that answers the question.
 Do not explain the document structure.
 Do not describe what is or is not listed.
 
@@ -172,6 +172,7 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:
+
 
 """
             return str(llm.complete(prompt)).strip()
