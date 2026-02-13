@@ -206,7 +206,12 @@ Do not add explanations.
 
 Line 2: The exact sentence from the document in quotes.
 
-STEP 3 — If no single sentence determines the answer:
+STEP 3 — Before answering, verify that the quoted sentence directly resolves the QUESTION.
+
+If no rule sentence directly answers the question,
+or if the context only provides general description, philosophy, definition,
+or background information,
+
 Reply exactly:
 Not covered in the documents.
 
@@ -215,8 +220,10 @@ Strict rules:
 - Never summarize
 - Never explain reasoning
 - Never use outside knowledge
-- If the answer depends on multiple clauses, refuse
+- Never answer using general descriptive text
+- Only rule sentences are valid answers
 - The conclusion must be mechanically supported by the quoted sentence
+
 
 CONTEXT:
 {context}
