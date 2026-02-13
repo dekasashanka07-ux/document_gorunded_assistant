@@ -2,11 +2,9 @@
 """
 Generic Document Assistant – Streamlit-compatible
 Multi-chunk, document-grounded QA (STRICT + LOW HALLUCINATION)
-
-Compliance mode is specialized for clause-level verification.
-Other modes unchanged.
+Hybrid retrieval + semantic chunking for consistency
+Mode-aware summary & prompts
 """
-
 # =============================================================================
 # IMPORTS
 # =============================================================================
@@ -27,7 +25,6 @@ from llama_index.core.postprocessor import SimilarityPostprocessor
 # GLOBAL SETTINGS
 # =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
 # =============================================================================
 # CLASS-BASED ASSISTANT
 # =============================================================================
@@ -40,210 +37,92 @@ class DocumentAssistant:
         self.bm25_retriever = None
         self._build_index()
 
-    # ---------------------------------------------------------------------
-    # INDEX BUILD
-    # ---------------------------------------------------------------------
     def _build_index(self):
-
+        # Semantic chunking (meaningful splits based on embeddings)
         splitter = SemanticSplitterNodeParser(
-            buffer_size=1,
-            breakpoint_percentile_threshold=95,
+            buffer_size=1, # 1 sentence buffer for context
+            breakpoint_percentile_threshold=95, # Aggressive splits only when needed
             embed_model=Settings.embed_model
         )
-
         nodes = splitter.get_nodes_from_documents(self.documents)
-
-        # Chunk size rules
-        max_chunk_chars = 800 if self.mode == "academic" else 1200
-
-        # --- SAFE TRIM (prevents broken numbered clauses) ---
+        # Mode tweaks: larger chunks for corporate policy docs
+        max_chunk_chars = 1200 if self.mode == "corporate" else 800
         for node in nodes:
             if len(node.text) > max_chunk_chars:
-                trimmed = node.text[:max_chunk_chars]
-                if "." in trimmed:
-                    trimmed = trimmed.rsplit(".", 1)[0] + "."
-                node.text = trimmed
-
+                node.text = node.text[:max_chunk_chars]
         self.index = VectorStoreIndex(nodes)
-
-        top_k = 5 if self.mode == "academic" else 15
-
+        # Retrievers - balanced for corporate recall vs academic conciseness
+        top_k = 15 if self.mode == "corporate" else 5 # Higher recall for corporate/policy docs
+        similarity_cutoff = 0.15 # Balanced threshold
         self.vector_retriever = VectorIndexRetriever(
             index=self.index,
             similarity_top_k=top_k,
-            node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=0.15)]
+            node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=similarity_cutoff)]
+        )
+        self.bm25_retriever = BM25Retriever.from_defaults(
+            nodes=nodes,
+            similarity_top_k=top_k
         )
 
-        self.bm25_retriever = BM25Retriever.from_defaults(nodes=nodes, similarity_top_k=top_k)
-
-    # ---------------------------------------------------------------------
-    # SUMMARY
-    # ---------------------------------------------------------------------
     def generate_summary(self, groq_api_key: str) -> str:
-
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=300)
-
-        if self.mode in ["corporate", "compliance"]:
+        # Mode-aware junk filtering
+        if self.mode == "corporate":
+            # Lighter: Keep headings like "Principles", "Privacy Policy"
             skip_patterns = ["table of contents", "objectives", "front matter", "copyright", "disclaimer"]
         else:
+            # Heavier for academic
             skip_patterns = [
-                "learning outcomes","understand the","identify the","describe the",
-                "unit objectives","block introduction","after studying this unit",
-                "check your progress","reflection and action","terminal questions",
-                "further reading","suggested readings","key words","glossary",
-                "contents","introduction","conclusion","course coordinator"
+                "learning outcomes", "understand the", "identify the", "describe the",
+                "unit objectives", "block introduction", "after studying this unit",
+                "check your progress", "reflection and action", "terminal questions",
+                "further reading", "suggested readings", "key words", "glossary",
+                "contents", "introduction", "conclusion", "course coordinator",
             ]
-
         filtered_docs = []
         for doc in self.documents:
-            if not any(p in doc.text.lower() for p in skip_patterns):
+            text_lower = doc.text.lower()
+            if not any(p in text_lower for p in skip_patterns):
                 filtered_docs.append(doc)
-
         if not filtered_docs:
             return "Summary unavailable due to document structure (mostly front-matter)."
-
+        # Truncate context to avoid Groq token limit
+        max_context_chars = 8000 # ~4000 tokens, safe
         context = ""
         for d in filtered_docs:
-            chunk = d.text[:1000]
-            if len(context) + len(chunk) > 8000:
+            chunk = d.text[:1000] # Smaller per-doc truncate
+            if len(context) + len(chunk) > max_context_chars:
                 break
             context += "\n\n" + chunk
-
         prompt = f"""
 Provide a concise summary of the document in about 120 words.
 Focus on core content only, in one natural paragraph.
 Ignore tables of contents, objectives, front matter, glossaries, exercises.
-
 TEXT:
 {context}
-
 SUMMARY (~120 words):
 """
-        return str(llm.complete(prompt)).strip()
+        response = llm.complete(prompt)
+        return str(response).strip()
 
-    # ---------------------------------------------------------------------
-    # QUESTION ANSWERING
-    # ---------------------------------------------------------------------
     def ask_question(self, question: str, groq_api_key: str) -> str:
-
         if not self.index:
             return "Index not initialized."
-
         llm = Groq(model="llama-3.1-8b-instant", api_key=groq_api_key, temperature=0.0, max_tokens=256)
-
+        # Hybrid retrieval: Combine vector + BM25, simple RRF-style dedup & rank
         vector_nodes = self.vector_retriever.retrieve(question)
         bm25_nodes = self.bm25_retriever.retrieve(question)
-
-        # =========================
-        # COMPLIANCE MODE
-        # =========================
-        if self.mode == "compliance":
-
-            # prefer lexical precision
-            retrieved = bm25_nodes if bm25_nodes else vector_nodes
-            if not retrieved:
-                return "Not covered in the documents."
-
-
-            context = retrieved[0].node.text.strip()
-
-
-            prompt = f"""
-You are answering questions about a legal, compliance, or policy document.
-You must use ONLY the provided policy text.
-
-You must follow this decision procedure:
-
-STEP 1 — Locate one rule sentence in the context.
-
-A rule sentence is a sentence that explicitly:
-- requires an action
-- forbids an action
-- allows an action
-- states something violates the Code or law
-
-The conclusion must correctly answer the QUESTION.
-
-First determine what the question asks:
-
-- If the question is a yes/no permission question (e.g., "Is", "Are", "Can"):
-  Line 1 must be either Yes or No.
-
-- If the question asks what action must be taken (e.g., "What should", "What must"):
-  Line 1 must be either Must or Must not.
-
-- If the question asks whether something is permitted or forbidden:
-  Line 1 must be Allowed or Prohibited.
-
-Do not choose a token arbitrarily.
-The token must logically match BOTH the question and the quoted sentence.
-
-You may determine the answer using the meaning of that ONE sentence.
-
-You may apply simple logical equivalence:
-- allowed ↔ prohibited
-- may ↔ may not
-- violates ↔ not allowed
-- required ↔ must
-- disclose ↔ share
-- permitted ↔ must not
-
-Do NOT combine multiple sentences.
-
-STEP 2 — If such a sentence exists:
-Return TWO lines:
-
-Line 1: A short conclusion derived directly from that sentence.
-Allowed forms:
-Yes
-No
-Allowed
-Prohibited
-Must
-Must not
-
-Do not add explanations.
-
-Line 2: The exact sentence from the document in quotes.
-
-STEP 3 — If no single sentence determines the answer:
-Reply exactly:
-Not covered in the documents.
-
-Strict rules:
-- Never combine multiple sentences
-- Never summarize
-- Never explain reasoning
-- Never use outside knowledge
-- If the answer depends on multiple clauses, refuse
-- The conclusion must be mechanically supported by the quoted sentence
-
-
-
-CONTEXT:
-{context}
-
-QUESTION: {question}
-
-ANSWER:
-"""
-            return str(llm.complete(prompt)).strip()
-
-        # =========================
-        # OTHER MODES (unchanged)
-        # =========================
+        # Combine & dedup (prefer higher score / vector first)
         all_nodes = {}
         for node in vector_nodes + bm25_nodes:
             node_id = node.node_id
             if node_id not in all_nodes or node.score > all_nodes[node_id].score:
                 all_nodes[node_id] = node
-
         retrieved = list(all_nodes.values())
-        retrieved.sort(key=lambda n: n.score, reverse=True)
-
+        retrieved.sort(key=lambda n: n.score, reverse=True) # Higher score first
         if not retrieved:
             return "Not covered in the documents."
-
+        # Format context
         context_parts = []
         total_chars = 0
         for n in retrieved:
@@ -253,11 +132,15 @@ ANSWER:
             context_parts.append(txt)
             total_chars += len(txt)
         context = "\n\n".join(context_parts)
-
+        # Mode-aware prompt (softer for natural flow)
         if self.mode == "corporate":
             prompt = f"""
 Answer using ONLY the provided context.
-Up to 3 sentences. No intro phrases.
+If the context clearly lists items (such as phases, steps, traits, or components),
+reproduce those items as a numbered or bulleted list, preserving the same items and count.
+Otherwise, answer in up to 3 sentences with no bullet points, no lists, no markdown.
+No introductory phrases.
+Just state the information directly.
 
 CONTEXT:
 {context}
@@ -266,10 +149,12 @@ QUESTION: {question}
 
 ANSWER:
 """
-        else:  # academic
+        else:
             prompt = f"""
 Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
+Academic style: clear, explanatory, no fluff.
 If not directly covered, say exactly: Not covered in the documents.
+Do NOT add external knowledge.
 
 CONTEXT:
 {context}
@@ -278,19 +163,61 @@ QUESTION: {question}
 
 ANSWER:
 """
+        response = llm.complete(prompt)
+        answer = str(response).strip()
+        # Academic mode only: sentence cap + complete sentences + paragraph breaks
+        if self.mode == "academic":
+            cap = self._academic_sentence_cap(question)
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            if len(sentences) > cap:
+                answer = " ".join(sentences[:cap]).strip()
+            # Enforce complete ending (trim incomplete last sentence)
+            m = re.search(r'[.!?](?!.*[.!?])', answer, re.S)
+            if m:
+                answer = answer[:m.end()].strip()
+            if not answer.endswith(('.', '!', '?')):
+                answer += "."
+            # Break medium/long answers into paragraphs
+            words = answer.split()
+            if len(words) > 100: # Trigger for medium+ length
+                sentences = re.split(r'(?<=[.!?])\s+', answer) # Re-split after trim
+                if len(sentences) > 3:
+                    para_count = 3 if len(words) > 150 else 2
+                    para_len = len(sentences) // para_count
+                    paras = []
+                    start = 0
+                    for i in range(para_count):
+                        end = start + para_len if i < para_count - 1 else len(sentences)
+                        para_sentences = sentences[start:end]
+                        para_text = " ".join(para_sentences).strip()
+                        if para_text:
+                            paras.append(para_text)
+                        start = end
+                    answer = "\n\n".join(paras)
+        return answer
 
-        return str(llm.complete(prompt)).strip()
+    def _academic_sentence_cap(self, question: str) -> int:
+        q = question.lower().strip()
+        if q.startswith(("what is", "define", "meaning of")):
+            return 3
+        if q.startswith(("explain", "discuss", "comment", "examine", "assess", "evaluate", "analyze", "critically assess", "critique", "review", "elaborate")):
+            return 9 # Increased to 9 for more detailed/explained answers
+        return 5
 
 # =============================================================================
-# DOCUMENT LOADER
+# DOCUMENT LOADER (with PyMuPDF for clean PDF text)
 # =============================================================================
 def load_documents(file_paths: List[str]) -> List[Document]:
     documents = []
     for path in file_paths:
         if path.lower().endswith('.pdf'):
             reader = PyMuPDFReader()
-            documents.extend(reader.load(file_path=path))
+            docs = reader.load(file_path=path)
+            documents.extend(docs)
         else:
+            # TXT/DOCX fallback
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                documents.append(Document(text=f.read()))
+                text = f.read()
+            documents.append(Document(text=text))
+
     return documents
