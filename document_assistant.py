@@ -145,7 +145,7 @@ SUMMARY (~120 words):
                 return "Not covered in the documents."
 
 
-            context = "\n".join(n.node.text.strip() for n in retrieved[:3])
+            context = retrieved[0].node.text.strip()
 
 
             prompt = f"""
