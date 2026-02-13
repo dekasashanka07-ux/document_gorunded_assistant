@@ -162,6 +162,22 @@ A rule sentence is a sentence that explicitly:
 - allows an action
 - states something violates the Code or law
 
+The conclusion must correctly answer the QUESTION.
+
+First determine what the question asks:
+
+- If the question is a yes/no permission question (e.g., "Is", "Are", "Can"):
+  Line 1 must be either Yes or No.
+
+- If the question asks what action must be taken (e.g., "What should", "What must"):
+  Line 1 must be either Must or Must not.
+
+- If the question asks whether something is permitted or forbidden:
+  Line 1 must be Allowed or Prohibited.
+
+Do not choose a token arbitrarily.
+The token must logically match BOTH the question and the quoted sentence.
+
 You may determine the answer using the meaning of that ONE sentence.
 
 You may apply simple logical equivalence:
@@ -181,9 +197,8 @@ Line 1: A short conclusion derived directly from that sentence.
 Allowed forms:
 Yes
 No
-Required
-Prohibited
 Allowed
+Prohibited
 Must
 Must not
 
@@ -202,7 +217,6 @@ Strict rules:
 - Never use outside knowledge
 - If the answer depends on multiple clauses, refuse
 - The conclusion must be mechanically supported by the quoted sentence
-
 
 CONTEXT:
 {context}
