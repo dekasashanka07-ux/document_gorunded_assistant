@@ -13,7 +13,6 @@ def load_readme():
         with open("README.md", "r", encoding="utf-8") as f:
             return f.read()
     return "README not found."
-
 # -------------------------------------------------
 # Upload limits
 # -------------------------------------------------
@@ -89,34 +88,13 @@ if uploaded_files:
             st.sidebar.error(f"'{f.name}' exceeds {MAX_MB}MB limit.")
             st.stop()
 
-# -------------------------------------------------
-# MODE SELECTION - NOW WITH COMPLIANCE
-# -------------------------------------------------
 doc_mode_label = st.sidebar.selectbox(
     "Answer Mode",
-    [
-        "Corporate (Business/Training/Explanatory – crisp answers)",
-        "Academic (University/College Modules – detailed concepts)",
-        "Compliance (Policy/Legal/HR/Code of Conduct – exact rules)"
-    ],
+    ["Corporate (Business/Training/Short Legal – crisp answers)",
+     "Academic (University/College Modules – detailed concepts)"],
     index=0
 )
-
-# Map UI selection to mode string
-if "Corporate" in doc_mode_label:
-    doc_mode = "corporate"
-elif "Academic" in doc_mode_label:
-    doc_mode = "academic"
-else:
-    doc_mode = "compliance"
-
-# Show mode hint
-mode_hints = {
-    "corporate": "✅ Concise answers, may combine within same topic",
-    "academic": "📚 Structured, explanatory, sentence-capped",
-    "compliance": "⚖️ Exact policy language, no cross-section merging"
-}
-st.sidebar.caption(mode_hints[doc_mode])
+doc_mode = "academic" if "Academic" in doc_mode_label else "corporate"
 
 # API Key input + fallback
 user_api_key = st.sidebar.text_input("Enter your Groq API Key (for unlimited use)", type="password", value="")
@@ -207,14 +185,12 @@ else:
     user_question = st.chat_input("Ask something from your document...")
     if user_question:
         st.session_state.chat.append(("user", user_question))
-        with st.chat_message("user"): 
-            st.markdown(user_question)
+        with st.chat_message("user"): st.markdown(user_question)
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 answer = st.session_state.assistant.ask_question(user_question, groq_api_key)
-                if using_fallback: 
-                    st.session_state.query_count += 1
+                if using_fallback: st.session_state.query_count += 1
             st.markdown(answer)
 
         st.session_state.chat.append(("assistant", answer))
