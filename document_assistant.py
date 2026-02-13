@@ -149,76 +149,76 @@ SUMMARY (~120 words):
 
 
             prompt = f"""
-You are answering questions about a legal, compliance, or policy document. 
-You must use ONLY the provided policy text. 
+You are answering questions about a legal, compliance, or policy document.
+You must use ONLY the provided policy text.
 
-You must follow this decision procedure: 
+You must follow this decision procedure:
 
-STEP 1 — Locate one rule sentence in the context. 
+STEP 1 — Locate one rule sentence in the context.
 
-The sentence must directly address the same subject as the question. 
-If the sentence answers a different topic, it is not a valid rule sentence. 
-
-A rule sentence is a sentence that explicitly: 
-- requires an action - forbids an action
+A rule sentence is a sentence that explicitly:
+- requires an action
+- forbids an action
 - allows an action
-- states something violates the Code or law 
+- states something violates the Code or law
 
 The conclusion must correctly answer the QUESTION.
 
-First determine what the question asks: 
+First determine what the question asks:
 
-- If the question is a yes/no permission question (e.g., "Is", "Are", "Can"): 
-Line 1 must be either Yes or No. 
+- If the question is a yes/no permission question (e.g., "Is", "Are", "Can"):
+  Line 1 must be either Yes or No.
 
-- If the question asks what action must be taken (e.g., "What should", "What must"): 
-Line 1 must be either Must or Must not. 
+- If the question asks what action must be taken (e.g., "What should", "What must"):
+  Line 1 must be either Must or Must not.
 
-- If the question asks whether something is permitted or forbidden: 
-Line 1 must be Allowed or Prohibited. 
+- If the question asks whether something is permitted or forbidden:
+  Line 1 must be Allowed or Prohibited.
 
-Do not choose a token arbitrarily. 
-The token must logically match BOTH the question and the quoted sentence. 
+Do not choose a token arbitrarily.
+The token must logically match BOTH the question and the quoted sentence.
 
-You may determine the answer using the meaning of that ONE sentence. 
+You may determine the answer using the meaning of that ONE sentence.
 
-You may apply simple logical equivalence: 
-- allowed ↔ prohibited 
-- may ↔ may not 
-- violates ↔ not allowed 
-- required ↔ must 
-- disclose ↔ share 
-- permitted ↔ must not 
+You may apply simple logical equivalence:
+- allowed ↔ prohibited
+- may ↔ may not
+- violates ↔ not allowed
+- required ↔ must
+- disclose ↔ share
+- permitted ↔ must not
 
 Do NOT combine multiple sentences.
- 
-STEP 2 — If such a sentence exists: 
-Return TWO lines: 
 
-Line 1: A short conclusion derived directly from that sentence. 
-Allowed forms: 
-Yes 
-No 
-Allowed 
-Prohibited 
-Must 
-Must not 
+STEP 2 — If such a sentence exists:
+Return TWO lines:
 
-Do not add explanations. 
+Line 1: A short conclusion derived directly from that sentence.
+Allowed forms:
+Yes
+No
+Allowed
+Prohibited
+Must
+Must not
 
-Line 2: The exact sentence from the document in quotes. 
+Do not add explanations.
 
-STEP 3 — If no single sentence determines the answer: 
-Reply exactly: 
-Not covered in the documents. 
+Line 2: The exact sentence from the document in quotes.
 
-Strict rules: 
-- Never combine multiple sentences 
-- Never summarize 
-- Never explain reasoning 
-- Never use outside knowledge 
+STEP 3 — If no single sentence determines the answer:
+Reply exactly:
+Not covered in the documents.
+
+Strict rules:
+- Never combine multiple sentences
+- Never summarize
+- Never explain reasoning
+- Never use outside knowledge
 - If the answer depends on multiple clauses, refuse
 - The conclusion must be mechanically supported by the quoted sentence
+
+
 
 CONTEXT:
 {context}
