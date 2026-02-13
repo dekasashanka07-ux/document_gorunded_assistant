@@ -149,13 +149,55 @@ SUMMARY (~120 words):
 
 
             prompt = f"""
-You answer questions about a legal or policy document using ONLY the provided text.
+You are answering questions about a legal, compliance, or policy document.
+You must use ONLY the provided policy text.
 
-Find a single sentence in the context that states a rule (something allowed, forbidden, required, or a violation).
+You must follow this decision procedure:
 
-If such a sentence exists, output exactly TWO lines:
+STEP 1 — Locate one rule sentence in the context.
 
-Line 1 must answer the question using one of:
+The sentence must directly address the same subject as the question.
+If the sentence answers a different topic, it is not a valid rule sentence.
+
+A rule sentence is a sentence that explicitly:
+- requires an action
+- forbids an action
+- allows an action
+- states something violates the Code or law
+
+The conclusion must correctly answer the QUESTION.
+
+First determine what the question asks:
+
+- If the question is a yes/no permission question (e.g., "Is", "Are", "Can"):
+  Line 1 must be either Yes or No.
+
+- If the question asks what action must be taken (e.g., "What should", "What must"):
+  Line 1 must be either Must or Must not.
+
+- If the question asks whether something is permitted or forbidden:
+  Line 1 must be Allowed or Prohibited.
+
+Do not choose a token arbitrarily.
+The token must logically match BOTH the question and the quoted sentence.
+
+You may determine the answer using the meaning of that ONE sentence.
+
+You may apply simple logical equivalence:
+- allowed ↔ prohibited
+- may ↔ may not
+- violates ↔ not allowed
+- required ↔ must
+- disclose ↔ share
+- permitted ↔ must not
+
+Do NOT combine multiple sentences.
+
+STEP 2 — If such a sentence exists:
+Return TWO lines:
+
+Line 1: A short conclusion derived directly from that sentence.
+Allowed forms:
 Yes
 No
 Allowed
@@ -163,18 +205,21 @@ Prohibited
 Must
 Must not
 
-Line 2 must be the exact quoted sentence from the document.
+Do not add explanations.
 
-The first line must logically match the meaning of the quoted sentence and the question.
+Line 2: The exact sentence from the document in quotes.
 
-If no rule sentence clearly answers the question, reply exactly:
+STEP 3 — If no single sentence determines the answer:
+Reply exactly:
 Not covered in the documents.
 
-Rules:
-- Do not combine sentences
-- Do not explain
-- Do not summarize
-- Do not use descriptive text as an answer
+Strict rules:
+- Never combine multiple sentences
+- Never summarize
+- Never explain reasoning
+- Never use outside knowledge
+- If the answer depends on multiple clauses, refuse
+- The conclusion must be mechanically supported by the quoted sentence
 
 CONTEXT:
 {context}
