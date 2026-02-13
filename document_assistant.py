@@ -135,19 +135,6 @@ SUMMARY (~120 words):
         # Mode-aware prompt (softer for natural flow)
         if self.mode == "corporate":
             prompt = f"""
-Answer concisely using ONLY the provided context. Be crisp and professional, but phrase naturally.
-Use bullets/lists if helpful for clarity (e.g., principles, steps).
-When presenting steps, lists, or code from the context, stay very close to the original wording and structure for accuracy.
-For code-like text, describe literally what is shown (e.g., language, endpoints, functions).
-If not directly covered, say exactly: Not covered in the documents.
-Do NOT add external knowledge.
-CONTEXT:
-{context}
-QUESTION: {question}
-ANSWER:
-"""
-        else:
-            prompt = f"""
 Answer using ONLY the provided context.
 
 RULES:
@@ -156,6 +143,17 @@ RULES:
 - No introductory phrases
 - Just state the information directly
 
+Do NOT add external knowledge.
+CONTEXT:
+{context}
+QUESTION: {question}
+ANSWER:
+"""
+        else:
+            prompt = f"""
+Answer in natural paragraphs with proper sentence structure, using ONLY the provided context.
+Academic style: clear, explanatory, no fluff.
+If not directly covered, say exactly: Not covered in the documents.
 Do NOT add external knowledge.
 CONTEXT:
 {context}
