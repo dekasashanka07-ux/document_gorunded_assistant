@@ -566,7 +566,16 @@ def load_documents(
     file_paths: List[str],
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> List[Document]:
-    """Load documents with metadata and progress tracking"""
+    """
+    Load documents with metadata and progress tracking
+    
+    Args:
+        file_paths: List of file paths to load
+        progress_callback: Optional callback(current, total, message)
+        
+    Returns:
+        List of Document objects with metadata
+    """
     documents = []
     total_files = len(file_paths)
     
@@ -623,3 +632,4 @@ def load_documents(
             continue
     
     return documents
+
