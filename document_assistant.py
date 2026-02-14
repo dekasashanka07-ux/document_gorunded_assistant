@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Enhanced Generic Document Assistant – Production Ready V3
+Enhanced Generic Document Assistant – Production Ready V4
 Multi-chunk, document-grounded QA with STRICT hallucination prevention
-Hybrid retrieval + reranking + semantic chunking + source attribution
-NEW: Dynamic sentence limits, progress tracking, AGGRESSIVE answer brevity control
-IMPROVED: Better chunking, increased retrieval, coverage indicator
-FIXED: Simple questions now get 1-2 sentence answers (not 3-4)
+Hybrid retrieval + reranking + semantic chunking + ACCURATE source attribution
+NEW: Answer-aware source filtering - only shows pages that contributed to answer
+FIXED: Source over-attribution resolved
 """
 # =============================================================================
 # IMPORTS
@@ -300,9 +299,9 @@ Do NOT start with "This document discusses" or "The document..."."""
                 if additional_nodes:
                     retrieved_nodes.extend(additional_nodes)
             
-            context, sources = self._build_context_with_sources(retrieved_nodes, question)
+            context, source_map = self._build_context_with_sources(retrieved_nodes, question)
             
-            # FIXED: Dynamic max_tokens based on question type
+            # Dynamic max_tokens based on question type
             is_simple_question = self._is_simple_question(question)
             max_tokens = 80 if is_simple_question else 300
             
@@ -326,12 +325,15 @@ Do NOT start with "This document discusses" or "The document..."."""
             answer = self._post_process_answer(answer, question)
             is_negative_response = self._is_negative_response(answer)
             
-            if sources and not is_negative_response:
-                answer += f"\n\n📚 Sources: {', '.join(sorted(sources))}"
+            # FIXED: Filter sources based on answer content
+            filtered_sources = self._filter_relevant_sources(answer, source_map, question)
+            
+            if filtered_sources and not is_negative_response:
+                answer += f"\n\n📚 Sources: {', '.join(sorted(filtered_sources))}"
             
             result = AnswerResult(
                 answer=answer,
-                sources=list(sources) if not is_negative_response else []
+                sources=list(filtered_sources) if not is_negative_response else []
             )
             
             return result if return_metadata else result.answer
@@ -421,8 +423,13 @@ Do NOT start with "This document discusses" or "The document..."."""
         reranked = self.reranker.postprocess_nodes(nodes_list, query_str=queries[0])
         return reranked
     
-    def _build_context_with_sources(self, nodes: List, question: str) -> Tuple[str, set]:
-        """Build context - adaptive based on question length"""
+    def _build_context_with_sources(self, nodes: List, question: str) -> Tuple[str, Dict[str, List[str]]]:
+        """Build context - adaptive based on question length
+        
+        Returns:
+            Tuple of (context_string, source_map)
+            source_map: Dict mapping source strings to list of chunk texts
+        """
         question_words = len(question.split())
         
         if question_words < 5:
@@ -435,7 +442,7 @@ Do NOT start with "This document discusses" or "The document..."."""
         max_context_chars = int(base_chars * 1.5) if self.mode == "academic" else base_chars
         
         context_parts = []
-        sources = set()
+        source_map = {}  # Map source string to list of chunk texts
         total_chars = 0
         
         for node in nodes:
@@ -456,10 +463,86 @@ Do NOT start with "This document discusses" or "The document..."."""
                     source_str = filename
                     if page and str(page).isdigit():
                         source_str += f" (p.{page})"
-                    sources.add(source_str)
+                    
+                    # Store the chunk text with its source
+                    if source_str not in source_map:
+                        source_map[source_str] = []
+                    source_map[source_str].append(txt)
         
         context = "\n\n---\n\n".join(context_parts)
-        return context, sources
+        return context, source_map
+    
+    def _filter_relevant_sources(self, answer: str, source_map: Dict[str, List[str]], question: str) -> set:
+        """
+        Filter sources to only include those that contributed to the answer
+        
+        Args:
+            answer: The generated answer text
+            source_map: Dict mapping source strings to their chunk texts
+            question: The original question
+            
+        Returns:
+            Set of relevant source strings
+        """
+        # If negative response, return empty set
+        if self._is_negative_response(answer):
+            return set()
+        
+        # Extract key terms from answer (proper nouns, numbers, important words)
+        answer_lower = answer.lower()
+        
+        # Extract capitalized words (proper nouns like "Nirvana", "Beatles")
+        proper_nouns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', answer)
+        
+        # Extract numbers
+        numbers = re.findall(r'\b\d+\b', answer)
+        
+        # Extract significant words (4+ characters, not common words)
+        common_words = {'this', 'that', 'with', 'from', 'have', 'been', 'were', 'their', 'which', 'these', 'also', 'such', 'when', 'what', 'where', 'about', 'more', 'into', 'through', 'during', 'between'}
+        significant_words = [w for w in re.findall(r'\b\w{4,}\b', answer_lower) if w not in common_words]
+        
+        # Combine all key terms
+        answer_keywords = set([w.lower() for w in proper_nouns] + [w.lower() for w in numbers] + significant_words)
+        
+        # Check if it's a simple question
+        is_simple = self._is_simple_question(question)
+        
+        relevant_sources = set()
+        source_scores = {}
+        
+        for source_str, chunks in source_map.items():
+            chunk_text = " ".join(chunks).lower()
+            
+            # Count keyword matches
+            matches = sum(1 for keyword in answer_keywords if keyword in chunk_text)
+            
+            # Calculate match ratio
+            match_ratio = matches / len(answer_keywords) if answer_keywords else 0
+            
+            source_scores[source_str] = match_ratio
+            
+            # Threshold based on question type
+            if is_simple:
+                # For simple questions, require at least 30% keyword match
+                if match_ratio >= 0.3:
+                    relevant_sources.add(source_str)
+            else:
+                # For complex questions, require at least 20% match
+                if match_ratio >= 0.2:
+                    relevant_sources.add(source_str)
+        
+        # If no sources passed filtering, take top scoring sources
+        if not relevant_sources and source_scores:
+            # Sort by score and take top N
+            sorted_sources = sorted(source_scores.items(), key=lambda x: x[1], reverse=True)
+            top_n = 2 if is_simple else 3
+            relevant_sources = set([src for src, score in sorted_sources[:top_n] if score > 0])
+        
+        # If still no sources, fall back to first 1-2 sources
+        if not relevant_sources and source_map:
+            relevant_sources = set(list(source_map.keys())[:1 if is_simple else 2])
+        
+        return relevant_sources
     
     def _get_answer_prompt(self, context: str, question: str, sentence_limit: int) -> str:
         """Generate answer prompt with STRICT brevity control for simple questions"""
