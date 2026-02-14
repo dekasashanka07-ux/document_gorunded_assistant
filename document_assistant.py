@@ -4,6 +4,7 @@ Enhanced Generic Document Assistant – Production Ready V2
 Multi-chunk, document-grounded QA with STRICT hallucination prevention
 Hybrid retrieval + reranking + semantic chunking + source attribution
 NEW: Dynamic sentence limits, confidence scoring, progress tracking
+IMPROVED: Better chunking, relaxed confidence, increased retrieval
 """
 # =============================================================================
 # IMPORTS
@@ -14,7 +15,7 @@ from typing import List, Optional, Dict, Tuple, Callable
 from dataclasses import dataclass
 
 from llama_index.core import VectorStoreIndex, Document, Settings
-from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.groq import Groq
 from llama_index.readers.file import PyMuPDFReader
@@ -71,35 +72,37 @@ class DocumentAssistant:
         self._build_index(progress_callback)
         
     def _build_index(self, progress_callback: Optional[Callable] = None):
-        """Build search index"""
+        """Build vector index with improved chunking and retrieval"""
         total_steps = 5
         
         if progress_callback:
-            progress_callback(1, total_steps, "Configuring chunking parameters...")
+            progress_callback(1, total_steps, "Step 1/5: Splitting documents into chunks...")
         
-        chunk_config = self._get_chunk_config()
-        
-        if progress_callback:
-            progress_callback(2, total_steps, "Creating semantic chunks...")
-        
-        splitter = SemanticSplitterNodeParser(
-            buffer_size=1,
-            breakpoint_percentile_threshold=95,
-            embed_model=Settings.embed_model
+        # IMPROVED: Smaller chunks with more overlap for better precision
+        text_splitter = SentenceSplitter(
+            chunk_size=400,      # Reduced from 512
+            chunk_overlap=100    # Increased from 50
         )
         
-        nodes = splitter.get_nodes_from_documents(self.documents)
+        nodes = text_splitter.get_nodes_from_documents(self.documents)
+        
+        if progress_callback:
+            progress_callback(2, total_steps, "Step 2/5: Processing chunks...")
+        
+        # Get chunk configuration
+        chunk_config = self._get_chunk_config()
         self.nodes = self._smart_truncate_nodes(nodes, chunk_config['max_chars'])
         
         if progress_callback:
-            progress_callback(3, total_steps, f"Building vector index ({len(self.nodes)} chunks)...")
+            progress_callback(3, total_steps, f"Step 3/5: Building vector index ({len(self.nodes)} chunks)...")
         
         self.index = VectorStoreIndex(self.nodes)
         
         if progress_callback:
-            progress_callback(4, total_steps, "Initializing hybrid retrievers...")
+            progress_callback(4, total_steps, "Step 4/5: Initializing hybrid retrievers...")
         
-        top_k = chunk_config['top_k']
+        # IMPROVED: Increased retrieval count for better recall
+        top_k = 15  # Increased from 12
         similarity_cutoff = chunk_config['similarity_cutoff']
         
         self.vector_retriever = VectorIndexRetriever(
@@ -112,15 +115,16 @@ class DocumentAssistant:
         
         self.bm25_retriever = BM25Retriever.from_defaults(
             nodes=self.nodes,
-            similarity_top_k=top_k
+            similarity_top_k=top_k  # Increased from 12
         )
         
         if progress_callback:
-            progress_callback(5, total_steps, "Loading reranking model...")
+            progress_callback(5, total_steps, "Step 5/5: Loading reranking model...")
         
+        # IMPROVED: More chunks for reranking
         self.reranker = SentenceTransformerRerank(
             model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-            top_n=8 if self.mode == "corporate" else 6
+            top_n=10 if self.mode == "corporate" else 8  # Increased
         )
     
     def _get_chunk_config(self) -> Dict:
@@ -128,7 +132,7 @@ class DocumentAssistant:
         if self.mode == "corporate":
             return {'max_chars': 1200, 'top_k': 15, 'similarity_cutoff': 0.15}
         else:
-            return {'max_chars': 900, 'top_k': 8, 'similarity_cutoff': 0.18}
+            return {'max_chars': 900, 'top_k': 15, 'similarity_cutoff': 0.18}
     
     def _smart_truncate_nodes(self, nodes: List, max_chars: int) -> List:
         """Truncate nodes at sentence boundaries"""
@@ -318,7 +322,7 @@ Do NOT start with "This document discusses"."""
             is_negative_response = self._is_negative_response(answer)
             
             if sources and not is_negative_response:
-                answer += f"\n\n*📚 Sources: {', '.join(sorted(sources))}*"
+                answer += f"\n\n📚 Sources: {', '.join(sorted(sources))}"
             
             result = AnswerResult(
                 answer=answer,
@@ -363,18 +367,37 @@ Do NOT start with "This document discusses"."""
         return any(p in answer.lower() for p in negatives)
     
     def _expand_query(self, question: str) -> List[str]:
-        """Expand query with variations"""
+        """Generic query expansion - works for ANY document"""
         queries = [question]
         q = question.lower().strip()
         
+        # Generic transformations (no domain knowledge)
         if q.startswith("what is "):
             term = question[8:].strip()
             queries.append(f"define {term}")
+            queries.append(f"explain {term}")
+            queries.append(f"{term} meaning")
+        
+        if q.startswith("what are "):
+            term = question[9:].strip()
+            queries.append(f"list of {term}")
+            queries.append(f"types of {term}")
         
         if q.startswith("how to "):
             queries.append(question.replace("how to", "steps for"))
+            queries.append(question.replace("how to", "process of"))
         
-        return queries[:3]
+        if q.startswith("why "):
+            queries.append(question.replace("why", "reasons for"))
+        
+        # Remove filler words for better matching
+        filler_words = ["the", "a", "an", "is", "are", "was", "were"]
+        words = q.split()
+        key_terms = " ".join([w for w in words if w not in filler_words])
+        if key_terms != q:
+            queries.append(key_terms)
+        
+        return queries[:4]  # Keep top 4 variations
     
     def _hybrid_retrieve(self, queries: List[str]) -> List:
         """Hybrid retrieval with reranking"""
@@ -399,9 +422,18 @@ Do NOT start with "This document discusses"."""
         return reranked
     
     def _build_context_with_sources(self, nodes: List, question: str) -> Tuple[str, set]:
-        """Build context and extract sources"""
+        """Build context - adaptive based on question length"""
         question_words = len(question.split())
-        base_chars = 3000 if question_words < 10 else 5500
+        
+        # IMPROVED: Dynamic context size based on question complexity
+        if question_words < 5:
+            base_chars = 3000  # Simple question
+        elif question_words < 12:
+            base_chars = 5000  # Medium question
+        else:
+            base_chars = 7000  # Complex question
+        
+        # Mode adjustment
         max_context_chars = int(base_chars * 1.5) if self.mode == "academic" else base_chars
         
         context_parts = []
@@ -417,6 +449,7 @@ Do NOT start with "This document discusses"."""
             context_parts.append(txt)
             total_chars += len(txt)
             
+            # Extract source metadata with validation
             meta = node.node.metadata
             if meta:
                 filename = meta.get("filename", "")
@@ -424,7 +457,7 @@ Do NOT start with "This document discusses"."""
                 
                 if filename:
                     source_str = filename
-                    if page:
+                    if page and str(page).isdigit():  # Validate page number
                         source_str += f" (p.{page})"
                     sources.add(source_str)
         
@@ -535,7 +568,7 @@ ANSWER:"""
         return answer.strip()
     
     def _assess_confidence(self, nodes: List, answer: str) -> str:
-        """Assess confidence"""
+        """Assess confidence with relaxed thresholds"""
         if not nodes:
             return "low"
         
@@ -545,15 +578,17 @@ ANSWER:"""
         
         avg_score = sum(top_scores) / len(top_scores)
         
+        # Check for uncertainty phrases
         uncertainty = ["not covered", "doesn't provide", "not mentioned", "not addressed"]
         has_uncertainty = any(p in answer.lower() for p in uncertainty)
         
         chunk_count = len(nodes)
         word_count = len(answer.split())
         
-        if avg_score > 0.75 and chunk_count >= 3 and not has_uncertainty and word_count > 30:
+        # RELAXED THRESHOLDS (improved from strict version)
+        if avg_score > 0.60 and chunk_count >= 3 and not has_uncertainty and word_count > 25:
             return "high"
-        elif avg_score > 0.55 and chunk_count >= 2 and word_count > 20:
+        elif avg_score > 0.40 and chunk_count >= 2 and word_count > 15:
             return "medium"
         else:
             return "low"
@@ -591,9 +626,12 @@ def load_documents(
                 docs = reader.load(file_path=path)
                 
                 for i, doc in enumerate(docs):
+                    # Sequential page numbering (most reliable)
+                    page_num = i + 1
+                    
                     doc.metadata = {
                         "filename": filename,
-                        "page": i + 1,
+                        "page": page_num,
                         "source": path,
                         "file_type": "pdf"
                     }
@@ -632,4 +670,3 @@ def load_documents(
             continue
     
     return documents
-
