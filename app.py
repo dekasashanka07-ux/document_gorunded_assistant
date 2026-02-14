@@ -447,14 +447,7 @@ else:
         with st.chat_message(role):
             st.markdown(msg)
             
-            # Display coverage indicator for assistant responses
-            if role == "assistant" and "coverage" in item:
-                coverage_html, coverage_class = item["coverage"]
-                st.markdown(
-                    f'<div class="coverage-info {coverage_class}">{coverage_html}</div>',
-                    unsafe_allow_html=True
-                )
-    
+               
     # Chat input
     user_question = st.chat_input("💬 Ask a question about your documents...")
     
@@ -493,18 +486,11 @@ else:
             # Display answer
             st.markdown(answer)
             
-            # CHANGED: Display coverage indicator instead of confidence/chunks/limit
-            coverage_html, coverage_class = get_coverage_indicator(answer, sources)
-            st.markdown(
-                f'<div class="coverage-info {coverage_class}">{coverage_html}</div>',
-                unsafe_allow_html=True
-            )
         
         # CHANGED: Add assistant response to chat with coverage indicator
         st.session_state.chat.append({
             "role": "assistant",
-            "message": answer,
-            "coverage": (coverage_html, coverage_class)
+            "message": answer            
         })
         
         st.rerun()
