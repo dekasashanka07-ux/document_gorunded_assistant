@@ -3,8 +3,8 @@
 Enhanced Generic Document Assistant – Production Ready V2
 Multi-chunk, document-grounded QA with STRICT hallucination prevention
 Hybrid retrieval + reranking + semantic chunking + source attribution
-NEW: Dynamic sentence limits, confidence scoring, progress tracking
-IMPROVED: Better chunking, relaxed confidence, increased retrieval
+NEW: Dynamic sentence limits, progress tracking
+IMPROVED: Better chunking, increased retrieval, coverage indicator
 """
 # =============================================================================
 # IMPORTS
@@ -29,22 +29,21 @@ from llama_index.core.postprocessor import (
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================
+# CHANGED: Updated to bge-small-en-v1.5 (removed "sentence-transformers/" prefix)
 Settings.embed_model = HuggingFaceEmbedding(
-    model_name="sentence-transformers/BAAI/bge-small-en-v1.5",
+    model_name="BAAI/bge-small-en-v1.5",
     cache_folder="./embeddings_cache"
 )
 
 # =============================================================================
 # DATA CLASSES
 # =============================================================================
+# CHANGED: Removed confidence, retrieved_chunks, sentence_limit
 @dataclass
 class AnswerResult:
     """Structured answer with metadata"""
     answer: str
     sources: List[str]
-    confidence: str
-    retrieved_chunks: int
-    sentence_limit: int
 
 
 # =============================================================================
@@ -265,13 +264,13 @@ Do NOT start with "This document discusses"."""
         if not question or len(question.strip()) < 3:
             error = "Please ask a more specific question."
             if return_metadata:
-                return AnswerResult(error, [], "low", 0, 0)
+                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
             return error
         
         if not self.index:
             error = "Error: Index not initialized."
             if return_metadata:
-                return AnswerResult(error, [], "low", 0, 0)
+                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
             return error
         
         try:
@@ -285,10 +284,7 @@ Do NOT start with "This document discusses"."""
             if not retrieved_nodes:
                 result = AnswerResult(
                     answer="This information is not covered in the provided documents.",
-                    sources=[],
-                    confidence="low",
-                    retrieved_chunks=0,
-                    sentence_limit=sentence_limit
+                    sources=[]  # CHANGED: Removed confidence, chunks, limit
                 )
                 return result if return_metadata else result.answer
             
@@ -314,11 +310,11 @@ Do NOT start with "This document discusses"."""
             if not answer or len(answer.strip()) < 10:
                 error = "Unable to generate answer. Please rephrase."
                 if return_metadata:
-                    return AnswerResult(error, [], "low", len(retrieved_nodes), sentence_limit)
+                    return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
                 return error
             
             answer = self._post_process_answer(answer, question)
-            confidence = self._assess_confidence(retrieved_nodes, answer)
+            # REMOVED: confidence = self._assess_confidence(retrieved_nodes, answer)
             is_negative_response = self._is_negative_response(answer)
             
             if sources and not is_negative_response:
@@ -326,10 +322,8 @@ Do NOT start with "This document discusses"."""
             
             result = AnswerResult(
                 answer=answer,
-                sources=list(sources) if not is_negative_response else [],
-                confidence=confidence,
-                retrieved_chunks=len(retrieved_nodes),
-                sentence_limit=sentence_limit
+                sources=list(sources) if not is_negative_response else []
+                # CHANGED: Removed confidence, retrieved_chunks, sentence_limit
             )
             
             return result if return_metadata else result.answer
@@ -337,7 +331,7 @@ Do NOT start with "This document discusses"."""
         except Exception as e:
             error = "Error processing question. Please try rephrasing."
             if return_metadata:
-                return AnswerResult(error, [], "low", 0, 0)
+                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
             return error
     
     def _is_list_question(self, question: str) -> bool:
@@ -567,34 +561,8 @@ ANSWER:"""
         
         return answer.strip()
     
-    def _assess_confidence(self, nodes: List, answer: str) -> str:
-        """Assess confidence with balanced thresholds"""
-        if not nodes:
-            return "low"
-    
-        top_scores = [n.score for n in nodes[:3] if hasattr(n, 'score')]
-        if not top_scores:
-            return "medium"
-    
-        avg_score = sum(top_scores) / len(top_scores)
-    
-        # Check for uncertainty phrases
-        uncertainty = ["not covered", "doesn't provide", "not mentioned", 
-                   "not addressed", "doesn't explicitly", "can be inferred"]
-        has_uncertainty = any(p in answer.lower() for p in uncertainty)
-    
-        chunk_count = len(nodes)
-        word_count = len(answer.split())
-        has_sources = chunk_count >= 2
-    
-    # BALANCED THRESHOLDS
-        if avg_score > 0.55 and chunk_count >= 3 and not has_uncertainty and word_count > 20:
-            return "high"
-        elif (avg_score > 0.35 and has_sources and word_count > 12) or \
-         (avg_score > 0.45 and chunk_count >= 2):
-             return "medium"
-        else:
-            return "low"
+    # REMOVED: _assess_confidence() method entirely
+
 
 # =============================================================================
 # DOCUMENT LOADER
