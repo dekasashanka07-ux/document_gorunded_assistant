@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Enhanced Generic Document Assistant – Production Ready
+Enhanced Generic Document Assistant – Production Ready V2
 Multi-chunk, document-grounded QA with STRICT hallucination prevention
 Hybrid retrieval + reranking + semantic chunking + source attribution
+NEW: Dynamic sentence limits, confidence scoring, progress tracking
 """
 # =============================================================================
 # IMPORTS
 # =============================================================================
 import os
 import re
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Callable
 from dataclasses import dataclass
 
 from llama_index.core import VectorStoreIndex, Document, Settings
@@ -40,8 +41,9 @@ class AnswerResult:
     """Structured answer with metadata"""
     answer: str
     sources: List[str]
-    confidence: str  # "high", "medium", "low"
+    confidence: str
     retrieved_chunks: int
+    sentence_limit: int
 
 
 # =============================================================================
@@ -49,22 +51,16 @@ class AnswerResult:
 # =============================================================================
 class DocumentAssistant:
     """
-    Enhanced document-grounded QA assistant with:
-    - Hybrid retrieval (Vector + BM25)
-    - Cross-encoder reranking
-    - Source attribution
-    - Intelligent chunking
-    - Mode-aware responses
+    Enhanced document-grounded QA assistant
     """
     
-    def __init__(self, documents: List[Document], mode: str = "corporate"):
-        """
-        Initialize assistant with documents
-        
-        Args:
-            documents: List of LlamaIndex Document objects with metadata
-            mode: "corporate" (crisp) or "academic" (detailed)
-        """
+    def __init__(
+        self, 
+        documents: List[Document], 
+        mode: str = "corporate",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ):
+        """Initialize assistant with documents"""
         self.mode = mode
         self.documents = documents
         self.index = None
@@ -72,14 +68,20 @@ class DocumentAssistant:
         self.vector_retriever = None
         self.bm25_retriever = None
         self.reranker = None
-        self._build_index()
+        self._build_index(progress_callback)
         
-    def _build_index(self):
-        """Build search index with semantic chunking and hybrid retrievers"""
-        # Configure chunking parameters based on mode
+    def _build_index(self, progress_callback: Optional[Callable] = None):
+        """Build search index"""
+        total_steps = 5
+        
+        if progress_callback:
+            progress_callback(1, total_steps, "Configuring chunking parameters...")
+        
         chunk_config = self._get_chunk_config()
         
-        # Semantic chunking with sentence boundary respect
+        if progress_callback:
+            progress_callback(2, total_steps, "Creating semantic chunks...")
+        
         splitter = SemanticSplitterNodeParser(
             buffer_size=1,
             breakpoint_percentile_threshold=95,
@@ -87,14 +89,16 @@ class DocumentAssistant:
         )
         
         nodes = splitter.get_nodes_from_documents(self.documents)
-        
-        # Smart truncation: preserve sentence boundaries
         self.nodes = self._smart_truncate_nodes(nodes, chunk_config['max_chars'])
         
-        # Build vector index
+        if progress_callback:
+            progress_callback(3, total_steps, f"Building vector index ({len(self.nodes)} chunks)...")
+        
         self.index = VectorStoreIndex(self.nodes)
         
-        # Initialize retrievers
+        if progress_callback:
+            progress_callback(4, total_steps, "Initializing hybrid retrievers...")
+        
         top_k = chunk_config['top_k']
         similarity_cutoff = chunk_config['similarity_cutoff']
         
@@ -111,38 +115,23 @@ class DocumentAssistant:
             similarity_top_k=top_k
         )
         
-        # Initialize reranker for hybrid fusion
+        if progress_callback:
+            progress_callback(5, total_steps, "Loading reranking model...")
+        
         self.reranker = SentenceTransformerRerank(
             model="cross-encoder/ms-marco-MiniLM-L-2-v2",
             top_n=8 if self.mode == "corporate" else 6
         )
     
     def _get_chunk_config(self) -> Dict:
-        """Get chunking configuration based on mode"""
+        """Get chunking configuration"""
         if self.mode == "corporate":
-            return {
-                'max_chars': 1200,
-                'top_k': 15,
-                'similarity_cutoff': 0.15
-            }
-        else:  # academic
-            return {
-                'max_chars': 900,
-                'top_k': 8,
-                'similarity_cutoff': 0.18
-            }
+            return {'max_chars': 1200, 'top_k': 15, 'similarity_cutoff': 0.15}
+        else:
+            return {'max_chars': 900, 'top_k': 8, 'similarity_cutoff': 0.18}
     
     def _smart_truncate_nodes(self, nodes: List, max_chars: int) -> List:
-        """
-        Truncate nodes while preserving sentence boundaries
-        
-        Args:
-            nodes: List of parsed nodes
-            max_chars: Maximum characters per chunk
-            
-        Returns:
-            List of truncated nodes
-        """
+        """Truncate nodes at sentence boundaries"""
         processed_nodes = []
         
         for node in nodes:
@@ -150,7 +139,6 @@ class DocumentAssistant:
                 processed_nodes.append(node)
                 continue
             
-            # Split into sentences
             sentences = re.split(r'(?<=[.!?])\s+', node.text)
             truncated = ""
             
@@ -160,24 +148,24 @@ class DocumentAssistant:
                 else:
                     break
             
-            # Only add if we have meaningful content
             if len(truncated.strip()) > 50:
                 node.text = truncated.strip()
                 processed_nodes.append(node)
         
         return processed_nodes
     
-    def generate_summary(self, groq_api_key: str) -> str:
-        """
-        Generate intelligent document summary
-        
-        Args:
-            groq_api_key: Groq API key
-            
-        Returns:
-            Concise summary (100-150 words)
-        """
+    def generate_summary(
+        self, 
+        groq_api_key: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> str:
+        """Generate document summary"""
         try:
+            total_steps = 3
+            
+            if progress_callback:
+                progress_callback(1, total_steps, "Initializing language model...")
+            
             llm = Groq(
                 model="llama-3.1-8b-instant",
                 api_key=groq_api_key,
@@ -185,25 +173,26 @@ class DocumentAssistant:
                 max_tokens=400
             )
             
-            # Filter out junk content
+            if progress_callback:
+                progress_callback(2, total_steps, "Analyzing document content...")
+            
             filtered_docs = self._filter_summary_docs()
             
             if not filtered_docs:
-                return "Summary unavailable: Document contains primarily structural content (TOC, exercises, etc.)."
+                return "Summary unavailable: Document contains primarily structural content."
             
-            # Build context with smart truncation
             context = self._build_summary_context(filtered_docs, max_chars=8000)
             
-            # Mode-aware summary prompt
-            prompt = self._get_summary_prompt(context)
+            if progress_callback:
+                progress_callback(3, total_steps, "Generating summary...")
             
+            prompt = self._get_summary_prompt(context)
             response = llm.complete(prompt)
             summary = str(response).strip()
             
-            # Validate quality
             word_count = len(summary.split())
             if word_count < 30:
-                return "Summary unavailable: Insufficient substantive content in document."
+                return "Summary unavailable: Insufficient substantive content."
             
             return summary
             
@@ -212,115 +201,101 @@ class DocumentAssistant:
     
     def _filter_summary_docs(self) -> List[Document]:
         """Filter out non-content sections"""
-        # Mode-specific skip patterns
         if self.mode == "corporate":
+            skip_patterns = ["table of contents", "objectives", "copyright"]
+        else:
             skip_patterns = [
-                "table of contents", "objectives", "front matter",
-                "copyright", "disclaimer", "revision history"
-            ]
-        else:  # academic
-            skip_patterns = [
-                "learning outcomes", "understand the", "identify the",
-                "describe the", "unit objectives", "block introduction",
-                "after studying this unit", "check your progress",
-                "reflection and action", "terminal questions",
-                "further reading", "suggested readings", "key words",
-                "glossary", "contents", "course coordinator"
+                "learning outcomes", "unit objectives", "check your progress",
+                "terminal questions", "glossary", "key words"
             ]
         
         filtered = []
         for doc in self.documents:
             text_lower = doc.text.lower()
-            # Skip if it's mostly junk
             junk_matches = sum(1 for p in skip_patterns if p in text_lower)
-            if junk_matches < 2:  # Allow some structural content
+            if junk_matches < 2:
                 filtered.append(doc)
         
         return filtered
     
     def _build_summary_context(self, docs: List[Document], max_chars: int) -> str:
-        """Build summary context with smart sampling"""
+        """Build summary context"""
         context = ""
-        docs_used = 0
-        max_docs = 10  # Don't use too many docs
-        
-        for doc in docs[:max_docs]:
-            # Take meaningful chunk from each doc
+        for doc in docs[:10]:
             chunk = doc.text[:1000].strip()
-            
             if len(context) + len(chunk) > max_chars:
                 break
-            
             context += "\n\n" + chunk
-            docs_used += 1
-        
         return context.strip()
     
     def _get_summary_prompt(self, context: str) -> str:
-        """Get mode-appropriate summary prompt"""
-        base_instructions = """Create a concise, informative summary.
-
-REQUIREMENTS:
-- 100-150 words
-- One cohesive paragraph (no bullet points)
-- Focus on main themes and key information
-- Ignore: tables of contents, objectives, exercises, references
-- Use natural, flowing language
-- Do NOT include phrases like "This document discusses" - just state the content directly
-"""
+        """Get summary prompt"""
+        base = """Create a concise summary (100-150 words).
+Focus on main themes. No bullet points. Natural language.
+Do NOT start with "This document discusses"."""
         
-        if self.mode == "corporate":
-            specific = "\n- Business/practical focus\n- Highlight actionable information\n"
-        else:
-            specific = "\n- Academic/conceptual focus\n- Highlight key theories and frameworks\n"
+        specific = "\nBusiness focus." if self.mode == "corporate" else "\nAcademic focus."
         
-        return f"""{base_instructions}{specific}
-DOCUMENT TEXT:
-{context}
-
-SUMMARY:"""
+        return f"{base}{specific}\n\nDOCUMENT:\n{context}\n\nSUMMARY:"
     
-    def ask_question(
-        self, 
-        question: str, 
-        groq_api_key: str,
-        return_metadata: bool = False
-    ) -> str:
-        """
-        Answer question with strict document grounding
+    def _get_corporate_sentence_limit(self, question: str) -> int:
+        """Determine sentence limit for corporate mode"""
+        q = question.lower().strip()
         
-        Args:
-            question: User question
-            groq_api_key: Groq API key
-            return_metadata: If True, return AnswerResult object
-            
-        Returns:
-            Answer string (or AnswerResult if return_metadata=True)
-        """
-        # Validate inputs
+        if any(q.startswith(p) for p in ["what is", "define", "who is"]):
+            return 3
+        
+        if any(k in q for k in ["what are", "list", "types", "kinds", "categories", "styles", "phases", "stages", "steps"]):
+            return 5
+        
+        if any(q.startswith(p) for p in ["how does", "how do", "why", "explain", "describe"]):
+            return 5
+        
+        if any(k in q for k in ["compare", "contrast", "difference", "vs", "versus", "similar"]):
+            return 6
+        
+        return 4
+    
+    def ask_question(self, question: str, groq_api_key: str, return_metadata: bool = False):
+        """Answer question with document grounding"""
         if not question or len(question.strip()) < 3:
-            return "Please ask a more specific question (at least 3 characters)."
+            error = "Please ask a more specific question."
+            if return_metadata:
+                return AnswerResult(error, [], "low", 0, 0)
+            return error
         
         if not self.index:
-            return "Error: Index not initialized. Please reinitialize the assistant."
+            error = "Error: Index not initialized."
+            if return_metadata:
+                return AnswerResult(error, [], "low", 0, 0)
+            return error
         
         try:
-            # Query expansion for better retrieval
-            expanded_queries = self._expand_query(question)
+            sentence_limit = 0
+            if self.mode == "corporate":
+                sentence_limit = self._get_corporate_sentence_limit(question)
             
-            # Hybrid retrieval with reranking
+            expanded_queries = self._expand_query(question)
             retrieved_nodes = self._hybrid_retrieve(expanded_queries)
             
             if not retrieved_nodes:
-                return "This information is not covered in the provided documents."
+                result = AnswerResult(
+                    answer="This information is not covered in the provided documents.",
+                    sources=[],
+                    confidence="low",
+                    retrieved_chunks=0,
+                    sentence_limit=sentence_limit
+                )
+                return result if return_metadata else result.answer
             
-            # Build context and extract sources
-            context, sources = self._build_context_with_sources(
-                retrieved_nodes,
-                question
-            )
+            is_list_question = self._is_list_question(question)
+            if is_list_question and len(retrieved_nodes) < 5:
+                additional_nodes = self._get_additional_context(question, retrieved_nodes)
+                if additional_nodes:
+                    retrieved_nodes.extend(additional_nodes)
             
-            # Generate answer
+            context, sources = self._build_context_with_sources(retrieved_nodes, question)
+            
             llm = Groq(
                 model="llama-3.1-8b-instant",
                 api_key=groq_api_key,
@@ -328,79 +303,87 @@ SUMMARY:"""
                 max_tokens=300
             )
             
-            prompt = self._get_answer_prompt(context, question)
+            prompt = self._get_answer_prompt(context, question, sentence_limit)
             response = llm.complete(prompt)
             answer = str(response).strip()
             
-            # Validate answer
             if not answer or len(answer.strip()) < 10:
-                return "Unable to generate a proper answer from the documents. Please rephrase your question."
+                error = "Unable to generate answer. Please rephrase."
+                if return_metadata:
+                    return AnswerResult(error, [], "low", len(retrieved_nodes), sentence_limit)
+                return error
             
-            # Post-process answer
             answer = self._post_process_answer(answer, question)
+            confidence = self._assess_confidence(retrieved_nodes, answer)
+            is_negative_response = self._is_negative_response(answer)
             
-            # Add source attribution
-            if sources:
+            if sources and not is_negative_response:
                 answer += f"\n\n*📚 Sources: {', '.join(sorted(sources))}*"
             
-            # Determine confidence
-            confidence = self._assess_confidence(retrieved_nodes, answer)
+            result = AnswerResult(
+                answer=answer,
+                sources=list(sources) if not is_negative_response else [],
+                confidence=confidence,
+                retrieved_chunks=len(retrieved_nodes),
+                sentence_limit=sentence_limit
+            )
             
-            if return_metadata:
-                return AnswerResult(
-                    answer=answer,
-                    sources=list(sources),
-                    confidence=confidence,
-                    retrieved_chunks=len(retrieved_nodes)
-                )
-            
-            return answer
+            return result if return_metadata else result.answer
             
         except Exception as e:
-            error_msg = f"Error processing question: {str(e)}"
-            print(error_msg)  # Log for debugging
-            return "An error occurred while processing your question. Please try rephrasing or contact support."
+            error = "Error processing question. Please try rephrasing."
+            if return_metadata:
+                return AnswerResult(error, [], "low", 0, 0)
+            return error
+    
+    def _is_list_question(self, question: str) -> bool:
+        """Detect list questions"""
+        q = question.lower()
+        indicators = ["what are", "list", "types of", "kinds of", "styles of", "phases", "stages", "steps"]
+        return any(i in q for i in indicators)
+    
+    def _get_additional_context(self, question: str, existing_nodes: List) -> List:
+        """Get additional context for incomplete answers"""
+        existing_ids = {node.node_id for node in existing_nodes}
+        broader_query = question.replace("what are", "about").replace("list", "information")
+        additional = self.vector_retriever.retrieve(broader_query)
+        new_nodes = [n for n in additional if n.node_id not in existing_ids][:3]
+        return new_nodes
+    
+    def _is_negative_response(self, answer: str) -> bool:
+        """Detect 'not covered' responses"""
+        negatives = [
+            "not covered in the documents",
+            "not addressed in the documents",
+            "this information is not available",
+            "not found in the documents",
+            "doesn't provide information",
+            "this topic is not covered"
+        ]
+        return any(p in answer.lower() for p in negatives)
     
     def _expand_query(self, question: str) -> List[str]:
-        """Expand query with variations for better retrieval"""
+        """Expand query with variations"""
         queries = [question]
-        q_lower = question.lower().strip()
+        q = question.lower().strip()
         
-        # Add common variations
-        if q_lower.startswith("what is "):
+        if q.startswith("what is "):
             term = question[8:].strip()
             queries.append(f"define {term}")
-            queries.append(f"{term} means")
         
-        if q_lower.startswith("how to "):
+        if q.startswith("how to "):
             queries.append(question.replace("how to", "steps for"))
-            queries.append(question.replace("how to", "process of"))
         
-        if q_lower.startswith("why "):
-            queries.append(question.replace("why", "reason for"))
-        
-        return queries[:3]  # Limit to avoid too many retrievals
+        return queries[:3]
     
     def _hybrid_retrieve(self, queries: List[str]) -> List:
-        """
-        Perform hybrid retrieval with reranking
-        
-        Args:
-            queries: List of query variations
-            
-        Returns:
-            Reranked nodes
-        """
+        """Hybrid retrieval with reranking"""
         all_nodes = {}
         
         for query in queries:
-            # Vector retrieval
             vector_nodes = self.vector_retriever.retrieve(query)
-            
-            # BM25 retrieval
             bm25_nodes = self.bm25_retriever.retrieve(query)
             
-            # Combine and deduplicate
             for node in vector_nodes + bm25_nodes:
                 node_id = node.node_id
                 if node_id not in all_nodes:
@@ -411,31 +394,12 @@ SUMMARY:"""
         if not all_nodes:
             return []
         
-        # Rerank with primary query
         nodes_list = list(all_nodes.values())
-        reranked = self.reranker.postprocess_nodes(
-            nodes_list,
-            query_str=queries[0]
-        )
-        
+        reranked = self.reranker.postprocess_nodes(nodes_list, query_str=queries[0])
         return reranked
     
-    def _build_context_with_sources(
-        self, 
-        nodes: List, 
-        question: str
-    ) -> Tuple[str, set]:
-        """
-        Build context string and extract source citations
-        
-        Args:
-            nodes: Retrieved nodes
-            question: User question
-            
-        Returns:
-            Tuple of (context_string, sources_set)
-        """
-        # Dynamic context size based on question
+    def _build_context_with_sources(self, nodes: List, question: str) -> Tuple[str, set]:
+        """Build context and extract sources"""
         question_words = len(question.split())
         base_chars = 3000 if question_words < 10 else 5500
         max_context_chars = int(base_chars * 1.5) if self.mode == "academic" else base_chars
@@ -447,14 +411,12 @@ SUMMARY:"""
         for node in nodes:
             txt = node.node.text.strip()
             
-            # Check if adding this would exceed limit
             if total_chars + len(txt) > max_context_chars:
                 break
             
             context_parts.append(txt)
             total_chars += len(txt)
             
-            # Extract source metadata
             meta = node.node.metadata
             if meta:
                 filename = meta.get("filename", "")
@@ -469,96 +431,94 @@ SUMMARY:"""
         context = "\n\n---\n\n".join(context_parts)
         return context, sources
     
-    def _get_answer_prompt(self, context: str, question: str) -> str:
-        """Get mode-appropriate answer prompt"""
+    def _get_answer_prompt(self, context: str, question: str, sentence_limit: int = 0) -> str:
+        """Get answer prompt"""
         if self.mode == "corporate":
-            return f"""You are a precise document assistant. Answer ONLY using the provided context.
+            return f"""You are a precise document assistant. Answer ONLY using the context.
 
-STRICT RULES:
-1. Maximum 3 concise sentences
-2. No bullet points or lists - use flowing prose
-3. If information is partial, state: "The document mentions [available info] but doesn't provide complete details on [missing aspect]."
-4. If not found, respond EXACTLY: "This information is not covered in the documents."
-5. NO external knowledge, speculation, or assumptions
-6. Be direct - no phrases like "According to the document" or "The text states"
-7. Just state the facts naturally
+RULES:
+1. Maximum {sentence_limit} sentences
+2. No bullet points - use prose
+3. For lists: Cover ALL items briefly
+4. If partial: "The document mentions [X] but doesn't provide details on [Y]."
+5. If not found: "This information is not covered in the documents."
+6. NO external knowledge
+7. Be direct - no "According to..."
 
 CONTEXT:
 {context}
 
 QUESTION: {question}
 
-ANSWER (max 3 sentences):"""
+ANSWER (max {sentence_limit} sentences):"""
         
-        else:  # academic
-            return f"""You are an academic document assistant. Provide a detailed, accurate answer using ONLY the context provided.
+        else:
+            cap = self._academic_sentence_cap(question)
+            return f"""Academic assistant. Detailed answer using ONLY the context.
 
 REQUIREMENTS:
-- Natural paragraph structure (2-3 paragraphs for complex topics)
-- Clear, explanatory style suitable for learning
-- Use proper terminology from the context
-- If information is incomplete, explicitly state: "The document covers [X] but does not address [Y]."
-- If not covered, respond: "This topic is not covered in the provided documents."
-- NO external knowledge or speculation
-- Maximum {self._academic_sentence_cap(question)} sentences
-- Break longer answers into logical paragraphs
+- 2-3 paragraphs for complex topics
+- Max {cap} sentences
+- If incomplete: "The document covers [X] but not [Y]."
+- If not covered: "This topic is not covered."
+- NO external knowledge
 
 CONTEXT:
 {context}
 
 QUESTION: {question}
 
-DETAILED ANSWER:"""
+ANSWER:"""
     
     def _academic_sentence_cap(self, question: str) -> int:
-        """Determine sentence limit for academic answers"""
-        q = question.lower().strip()
+        """Sentence limit for academic mode"""
+        q = question.lower()
         
-        # Definition questions: brief
-        if q.startswith(("what is", "define", "meaning of")):
+        if q.startswith(("what is", "define")):
             return 3
         
-        # Explanation questions: detailed
-        if any(q.startswith(kw) for kw in [
-            "explain", "discuss", "comment", "examine", "assess",
-            "evaluate", "analyze", "analyse", "critically assess",
-            "critique", "review", "elaborate", "describe in detail"
-        ]):
-            return 10  # Allow detailed explanations
+        if any(q.startswith(k) for k in ["explain", "discuss", "analyze", "evaluate"]):
+            return 10
         
-        # Comparison questions: medium
-        if any(word in q for word in ["compare", "contrast", "difference", "similar"]):
+        if any(w in q for w in ["compare", "contrast", "difference"]):
             return 7
         
-        # Default: moderate
         return 5
     
     def _post_process_answer(self, answer: str, question: str) -> str:
-        """Post-process answer for quality and consistency"""
-        # Academic mode: enforce sentence limits and paragraph breaks
-        if self.mode == "academic":
+        """Post-process answer"""
+        if self.mode == "corporate":
+            sentence_limit = self._get_corporate_sentence_limit(question)
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            
+            if len(sentences) > sentence_limit:
+                answer = " ".join(sentences[:sentence_limit]).strip()
+            
+            if not answer.endswith(('.', '!', '?')):
+                match = re.search(r'[.!?](?!.*[.!?])', answer, re.S)
+                if match:
+                    answer = answer[:match.end()].strip()
+                else:
+                    answer += "."
+        
+        elif self.mode == "academic":
             cap = self._academic_sentence_cap(question)
             sentences = re.split(r'(?<=[.!?])\s+', answer)
             
-            # Trim to sentence cap
             if len(sentences) > cap:
                 answer = " ".join(sentences[:cap]).strip()
             
-            # Ensure complete sentences
             if not answer.endswith(('.', '!', '?')):
-                # Find last complete sentence
                 match = re.search(r'[.!?](?!.*[.!?])', answer, re.S)
                 if match:
                     answer = answer[:match.end()].strip()
                 else:
                     answer += "."
             
-            # Add paragraph breaks for longer answers
             words = answer.split()
             if len(words) > 100:
                 sentences = re.split(r'(?<=[.!?])\s+', answer)
                 if len(sentences) > 4:
-                    # Split into 2-3 paragraphs
                     para_count = 3 if len(words) > 180 else 2
                     para_size = len(sentences) // para_count
                     
@@ -575,55 +535,52 @@ DETAILED ANSWER:"""
         return answer.strip()
     
     def _assess_confidence(self, nodes: List, answer: str) -> str:
-        """Assess answer confidence based on retrieval quality"""
+        """Assess confidence"""
         if not nodes:
             return "low"
         
-        # Check average score of top nodes
         top_scores = [n.score for n in nodes[:3] if hasattr(n, 'score')]
         if not top_scores:
             return "medium"
         
         avg_score = sum(top_scores) / len(top_scores)
         
-        # Check answer quality indicators
-        has_disclaimer = any(phrase in answer.lower() for phrase in [
-            "not covered", "doesn't provide", "document mentions but"
-        ])
+        uncertainty = ["not covered", "doesn't provide", "not mentioned", "not addressed"]
+        has_uncertainty = any(p in answer.lower() for p in uncertainty)
         
-        if avg_score > 0.8 and not has_disclaimer:
+        chunk_count = len(nodes)
+        word_count = len(answer.split())
+        
+        if avg_score > 0.75 and chunk_count >= 3 and not has_uncertainty and word_count > 30:
             return "high"
-        elif avg_score > 0.5:
+        elif avg_score > 0.55 and chunk_count >= 2 and word_count > 20:
             return "medium"
         else:
             return "low"
 
 
 # =============================================================================
-# DOCUMENT LOADER WITH METADATA
+# DOCUMENT LOADER
 # =============================================================================
-def load_documents(file_paths: List[str]) -> List[Document]:
-    """
-    Load documents with rich metadata
-    
-    Args:
-        file_paths: List of file paths to load
-        
-    Returns:
-        List of Document objects with metadata
-    """
+def load_documents(
+    file_paths: List[str],
+    progress_callback: Optional[Callable[[int, int, str], None]] = None
+) -> List[Document]:
+    """Load documents with metadata and progress tracking"""
     documents = []
+    total_files = len(file_paths)
     
-    for path in file_paths:
+    for idx, path in enumerate(file_paths, 1):
+        if progress_callback:
+            progress_callback(idx, total_files, f"Loading {os.path.basename(path)}...")
+        
         filename = os.path.basename(path)
         
         try:
             if path.lower().endswith('.pdf'):
-                # Use PyMuPDF for clean extraction
                 reader = PyMuPDFReader()
                 docs = reader.load(file_path=path)
                 
-                # Add metadata to each page
                 for i, doc in enumerate(docs):
                     doc.metadata = {
                         "filename": filename,
@@ -648,9 +605,7 @@ def load_documents(file_paths: List[str]) -> List[Document]:
                 documents.append(doc)
             
             elif path.lower().endswith('.docx'):
-                # Basic DOCX support (you might want to add python-docx)
                 with open(path, 'rb') as f:
-                    # Placeholder - implement proper DOCX parsing if needed
                     text = f.read().decode('utf-8', errors='ignore')
                 
                 doc = Document(
