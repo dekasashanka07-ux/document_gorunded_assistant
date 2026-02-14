@@ -1,6 +1,6 @@
 """
-Enhanced Document Assistant - Streamlit App
-Production-ready with improved UX and error handling
+Enhanced Document Assistant - Streamlit App V2
+Production-ready with improved UX, progress tracking, and confidence display
 """
 import streamlit as st
 import os
@@ -31,16 +31,7 @@ def load_readme() -> str:
     return "README not found."
 
 def validate_pdf_pages(file_bytes: bytes, filename: str) -> Optional[str]:
-    """
-    Validate PDF page count
-    
-    Args:
-        file_bytes: PDF file bytes
-        filename: Name of file
-        
-    Returns:
-        Error message if invalid, None if valid
-    """
+    """Validate PDF page count"""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         page_count = len(doc)
@@ -53,12 +44,7 @@ def validate_pdf_pages(file_bytes: bytes, filename: str) -> Optional[str]:
         return f"Error validating '{filename}': {str(e)}"
 
 def validate_file_size(uploaded_file) -> Optional[str]:
-    """
-    Validate file size
-    
-    Returns:
-        Error message if invalid, None if valid
-    """
+    """Validate file size"""
     if uploaded_file.size > MAX_BYTES:
         size_mb = uploaded_file.size / (1024 * 1024)
         return f"'{uploaded_file.name}' is {size_mb:.1f}MB (max: {MAX_MB}MB)"
@@ -119,11 +105,26 @@ st.markdown("""
         background-color: #f8d7da;
         color: #721c24;
     }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
+    .confidence-high {
+        color: #28a745;
+        font-weight: 600;
+    }
+    .confidence-medium {
+        color: #ffc107;
+        font-weight: 600;
+    }
+    .confidence-low {
+        color: #dc3545;
+        font-weight: 600;
+    }
+    .meta-info {
+        font-size: 0.85rem;
+        color: #6c757d;
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+        border-left: 3px solid #007bff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -171,10 +172,8 @@ with b1:
 
 with b2:
     if st.button("🔄 Reset All", use_container_width=True):
-        # Cleanup
         cleanup_temp_folder(st.session_state.doc_folder)
         
-        # Reset state
         st.session_state.initialized = False
         st.session_state.chat = []
         st.session_state.doc_summary = None
@@ -193,7 +192,6 @@ with b2:
 with st.sidebar:
     st.header("📂 Document Upload")
     
-    # File uploader
     uploaded_files = st.file_uploader(
         "Upload documents (.pdf, .txt, .docx)",
         type=["pdf", "txt", "docx"],
@@ -206,21 +204,18 @@ with st.sidebar:
     validation_errors = []
     if uploaded_files:
         for file in uploaded_files:
-            # Size check
             size_error = validate_file_size(file)
             if size_error:
                 validation_errors.append(size_error)
                 continue
             
-            # PDF page check
             if file.name.lower().endswith('.pdf'):
                 file_bytes = file.read()
-                file.seek(0)  # Reset file pointer
+                file.seek(0)
                 page_error = validate_pdf_pages(file_bytes, file.name)
                 if page_error:
                     validation_errors.append(page_error)
     
-    # Display validation errors
     if validation_errors:
         for error in validation_errors:
             st.error(error)
@@ -269,12 +264,10 @@ with st.sidebar:
             st.session_state.query_count = 0
             st.session_state.last_reset = datetime.now().date()
         
-        # Reset daily
         if datetime.now().date() > st.session_state.last_reset:
             st.session_state.query_count = 0
             st.session_state.last_reset = datetime.now().date()
         
-        # Display usage
         remaining = 10 - st.session_state.query_count
         st.metric("Questions Remaining Today", remaining)
         
@@ -298,53 +291,84 @@ with st.sidebar:
             st.error("❌ No API key available. Please enter your Groq API key.")
         else:
             try:
-                with st.spinner("⏳ Processing documents..."):
-                    # Create temp directory
-                    base_tmp = os.path.join(tempfile.gettempdir(), "doc_assistant")
-                    os.makedirs(base_tmp, exist_ok=True)
-                    
-                    folder_id = str(uuid.uuid4())[:8]
-                    doc_path = os.path.join(base_tmp, folder_id)
-                    os.makedirs(doc_path, exist_ok=True)
-                    
-                    # Save files
-                    file_paths = []
-                    for file in uploaded_files:
-                        file_bytes = file.read()
-                        dest_path = os.path.join(doc_path, file.name)
-                        
-                        with open(dest_path, "wb") as out:
-                            out.write(file_bytes)
-                        
-                        file_paths.append(dest_path)
-                    
-                    st.session_state.doc_folder = doc_path
-                    st.session_state.doc_count = len(file_paths)
+                # Step 1: Save files with progress
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                with st.spinner(f"🔧 Building index ({doc_mode} mode)..."):
-                    # Load documents
-                    documents = da.load_documents(file_paths)
-                    
-                    # Initialize assistant
-                    st.session_state.assistant = da.DocumentAssistant(
-                        documents,
-                        mode=doc_mode
-                    )
-                    st.session_state.current_mode = doc_mode
+                status_text.text("📁 Saving uploaded files...")
+                progress_bar.progress(10)
                 
+                base_tmp = os.path.join(tempfile.gettempdir(), "doc_assistant")
+                os.makedirs(base_tmp, exist_ok=True)
+                
+                folder_id = str(uuid.uuid4())[:8]
+                doc_path = os.path.join(base_tmp, folder_id)
+                os.makedirs(doc_path, exist_ok=True)
+                
+                file_paths = []
+                for file in uploaded_files:
+                    file_bytes = file.read()
+                    dest_path = os.path.join(doc_path, file.name)
+                    
+                    with open(dest_path, "wb") as out:
+                        out.write(file_bytes)
+                    
+                    file_paths.append(dest_path)
+                
+                st.session_state.doc_folder = doc_path
+                st.session_state.doc_count = len(file_paths)
+                
+                progress_bar.progress(20)
+                
+                # Step 2: Load documents with progress callback
+                def load_progress(current, total, message):
+                    pct = 20 + int((current / total) * 20)  # 20-40%
+                    progress_bar.progress(pct)
+                    status_text.text(f"📄 {message}")
+                
+                status_text.text("📄 Loading documents...")
+                documents = da.load_documents(file_paths, progress_callback=load_progress)
+                
+                progress_bar.progress(40)
+                
+                # Step 3: Build index with progress callback
+                def index_progress(current, total, message):
+                    pct = 40 + int((current / total) * 40)  # 40-80%
+                    progress_bar.progress(pct)
+                    status_text.text(f"🔧 {message}")
+                
+                status_text.text(f"🔧 Building index ({doc_mode} mode)...")
+                st.session_state.assistant = da.DocumentAssistant(
+                    documents,
+                    mode=doc_mode,
+                    progress_callback=index_progress
+                )
+                st.session_state.current_mode = doc_mode
+                
+                progress_bar.progress(80)
                 st.session_state.initialized = True
                 
-                with st.spinner("📝 Generating summary..."):
-                    st.session_state.doc_summary = st.session_state.assistant.generate_summary(
-                        groq_api_key
-                    )
+                # Step 4: Generate summary with progress callback
+                def summary_progress(current, total, message):
+                    pct = 80 + int((current / total) * 20)  # 80-100%
+                    progress_bar.progress(pct)
+                    status_text.text(f"📝 {message}")
+                
+                status_text.text("📝 Generating summary...")
+                st.session_state.doc_summary = st.session_state.assistant.generate_summary(
+                    groq_api_key,
+                    progress_callback=summary_progress
+                )
+                
+                progress_bar.progress(100)
+                status_text.text("✅ Initialization complete!")
                 
                 st.success(f"✅ Initialized with {len(file_paths)} document(s) in {doc_mode.upper()} mode!")
+                st.balloons()
                 st.rerun()
                 
             except Exception as e:
                 st.error(f"❌ Initialization failed: {str(e)}")
-                # Cleanup on failure
                 cleanup_temp_folder(st.session_state.doc_folder)
                 st.session_state.doc_folder = None
 
@@ -380,7 +404,6 @@ if st.session_state.doc_summary is not None:
 if not st.session_state.initialized:
     st.info("👈 **Get Started:** Upload documents in the sidebar and click 'Initialize Assistant'")
     
-    # Show instructions
     st.markdown("### How to Use")
     st.markdown("""
     1. **Upload** your documents (PDF, TXT, or DOCX)
@@ -391,28 +414,68 @@ if not st.session_state.initialized:
     """)
     
 else:
-    # Display chat history
-    for role, msg in st.session_state.chat:
+    # Display chat history with metadata
+    for item in st.session_state.chat:
+        role = item["role"]
+        msg = item["message"]
+        
         with st.chat_message(role):
             st.markdown(msg)
+            
+            # Display metadata for assistant responses
+            if role == "assistant" and "metadata" in item:
+                meta = item["metadata"]
+                
+                # Confidence indicator
+                confidence = meta.get("confidence", "unknown")
+                conf_class = f"confidence-{confidence}"
+                conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
+                
+                # Build metadata display
+                meta_parts = [f"{conf_emoji} **Confidence:** <span class='{conf_class}'>{confidence.upper()}</span>"]
+                
+                # Add chunks info
+                chunks = meta.get("retrieved_chunks", 0)
+                if chunks > 0:
+                    meta_parts.append(f"📦 **Chunks:** {chunks}")
+                
+                # Add sentence limit info (corporate mode only)
+                if st.session_state.current_mode == "corporate":
+                    sentence_limit = meta.get("sentence_limit", 0)
+                    if sentence_limit > 0:
+                        meta_parts.append(f"📏 **Limit:** {sentence_limit} sentences")
+                
+                meta_html = " | ".join(meta_parts)
+                st.markdown(
+                    f'<div class="meta-info">{meta_html}</div>',
+                    unsafe_allow_html=True
+                )
     
     # Chat input
     user_question = st.chat_input("💬 Ask a question about your documents...")
     
     if user_question:
         # Add user message
-        st.session_state.chat.append(("user", user_question))
+        st.session_state.chat.append({
+            "role": "user",
+            "message": user_question
+        })
+        
         with st.chat_message("user"):
             st.markdown(user_question)
         
-        # Generate response
+        # Generate response with metadata
         with st.chat_message("assistant"):
             with st.spinner("🤔 Thinking..."):
                 try:
-                    answer = st.session_state.assistant.ask_question(
+                    # Get answer WITH metadata
+                    result = st.session_state.assistant.ask_question(
                         user_question,
-                        groq_api_key
+                        groq_api_key,
+                        return_metadata=True
                     )
+                    
+                    answer = result.answer
                     
                     # Increment query count if using fallback
                     if using_fallback:
@@ -420,11 +483,47 @@ else:
                     
                 except Exception as e:
                     answer = f"❌ Error: {str(e)}\n\nPlease try rephrasing your question."
+                    result = da.AnswerResult(
+                        answer=answer,
+                        sources=[],
+                        confidence="low",
+                        retrieved_chunks=0,
+                        sentence_limit=0
+                    )
             
+            # Display answer
             st.markdown(answer)
+            
+            # Display metadata
+            confidence = result.confidence
+            conf_class = f"confidence-{confidence}"
+            conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
+            
+            meta_parts = [f"{conf_emoji} **Confidence:** <span class='{conf_class}'>{confidence.upper()}</span>"]
+            
+            if result.retrieved_chunks > 0:
+                meta_parts.append(f"📦 **Chunks:** {result.retrieved_chunks}")
+            
+            if st.session_state.current_mode == "corporate" and result.sentence_limit > 0:
+                meta_parts.append(f"📏 **Limit:** {result.sentence_limit} sentences")
+            
+            meta_html = " | ".join(meta_parts)
+            st.markdown(
+                f'<div class="meta-info">{meta_html}</div>',
+                unsafe_allow_html=True
+            )
         
-        # Add assistant response to chat
-        st.session_state.chat.append(("assistant", answer))
+        # Add assistant response to chat with metadata
+        st.session_state.chat.append({
+            "role": "assistant",
+            "message": answer,
+            "metadata": {
+                "confidence": result.confidence,
+                "retrieved_chunks": result.retrieved_chunks,
+                "sentence_limit": result.sentence_limit
+            }
+        })
+        
         st.rerun()
 
 # =============================================================================
