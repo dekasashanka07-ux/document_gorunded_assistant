@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Enhanced Generic Document Assistant – Production Ready V2
+Enhanced Generic Document Assistant – Production Ready V3
 Multi-chunk, document-grounded QA with STRICT hallucination prevention
 Hybrid retrieval + reranking + semantic chunking + source attribution
-NEW: Dynamic sentence limits, progress tracking
+NEW: Dynamic sentence limits, progress tracking, AGGRESSIVE answer brevity control
 IMPROVED: Better chunking, increased retrieval, coverage indicator
+FIXED: Simple questions now get 1-2 sentence answers (not 3-4)
 """
 # =============================================================================
 # IMPORTS
@@ -29,7 +30,6 @@ from llama_index.core.postprocessor import (
 # =============================================================================
 # GLOBAL SETTINGS
 # =============================================================================
-# CHANGED: Updated to bge-small-en-v1.5 (removed "sentence-transformers/" prefix)
 Settings.embed_model = HuggingFaceEmbedding(
     model_name="BAAI/bge-small-en-v1.5",
     cache_folder="./embeddings_cache"
@@ -38,7 +38,6 @@ Settings.embed_model = HuggingFaceEmbedding(
 # =============================================================================
 # DATA CLASSES
 # =============================================================================
-# CHANGED: Removed confidence, retrieved_chunks, sentence_limit
 @dataclass
 class AnswerResult:
     """Structured answer with metadata"""
@@ -77,10 +76,9 @@ class DocumentAssistant:
         if progress_callback:
             progress_callback(1, total_steps, "Step 1/5: Splitting documents into chunks...")
         
-        # IMPROVED: Smaller chunks with more overlap for better precision
         text_splitter = SentenceSplitter(
-            chunk_size=400,      # Reduced from 512
-            chunk_overlap=100    # Increased from 50
+            chunk_size=400,
+            chunk_overlap=100
         )
         
         nodes = text_splitter.get_nodes_from_documents(self.documents)
@@ -88,7 +86,6 @@ class DocumentAssistant:
         if progress_callback:
             progress_callback(2, total_steps, "Step 2/5: Processing chunks...")
         
-        # Get chunk configuration
         chunk_config = self._get_chunk_config()
         self.nodes = self._smart_truncate_nodes(nodes, chunk_config['max_chars'])
         
@@ -100,8 +97,7 @@ class DocumentAssistant:
         if progress_callback:
             progress_callback(4, total_steps, "Step 4/5: Initializing hybrid retrievers...")
         
-        # IMPROVED: Increased retrieval count for better recall
-        top_k = 15  # Increased from 12
+        top_k = 15
         similarity_cutoff = chunk_config['similarity_cutoff']
         
         self.vector_retriever = VectorIndexRetriever(
@@ -114,16 +110,15 @@ class DocumentAssistant:
         
         self.bm25_retriever = BM25Retriever.from_defaults(
             nodes=self.nodes,
-            similarity_top_k=top_k  # Increased from 12
+            similarity_top_k=top_k
         )
         
         if progress_callback:
             progress_callback(5, total_steps, "Step 5/5: Loading reranking model...")
         
-        # IMPROVED: More chunks for reranking
         self.reranker = SentenceTransformerRerank(
             model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-            top_n=10 if self.mode == "corporate" else 8  # Increased
+            top_n=10 if self.mode == "corporate" else 8
         )
     
     def _get_chunk_config(self) -> Dict:
@@ -241,7 +236,6 @@ Do NOT start with "This document discusses" or "The document..."."""
         specific = "\nBusiness focus: What's the document about and why it matters." if self.mode == "corporate" else "\nAcademic focus: Core arguments and contributions."
     
         return f"{base}{specific}\n\nDOCUMENT:\n{context}\n\nSUMMARY:"
-
     
     def _get_corporate_sentence_limit(self, question: str) -> int:
         """Determine sentence limit for corporate mode"""
@@ -261,18 +255,28 @@ Do NOT start with "This document discusses" or "The document..."."""
         
         return 4
     
+    def _is_simple_question(self, question: str) -> bool:
+        """Detect simple factual questions requiring brief answers"""
+        question_lower = question.lower().strip()
+        simple_triggers = [
+            'name', 'list', 'who sang', 'who wrote', 'who is', 'what is',
+            'what are', 'which', 'what year', 'when did', 'when was',
+            'how many', 'name a', 'name an', 'give me', 'tell me the'
+        ]
+        return any(trigger in question_lower for trigger in simple_triggers)
+    
     def ask_question(self, question: str, groq_api_key: str, return_metadata: bool = False):
         """Answer question with document grounding"""
         if not question or len(question.strip()) < 3:
             error = "Please ask a more specific question."
             if return_metadata:
-                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
+                return AnswerResult(error, [])
             return error
         
         if not self.index:
             error = "Error: Index not initialized."
             if return_metadata:
-                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
+                return AnswerResult(error, [])
             return error
         
         try:
@@ -286,7 +290,7 @@ Do NOT start with "This document discusses" or "The document..."."""
             if not retrieved_nodes:
                 result = AnswerResult(
                     answer="This information is not covered in the provided documents.",
-                    sources=[]  # CHANGED: Removed confidence, chunks, limit
+                    sources=[]
                 )
                 return result if return_metadata else result.answer
             
@@ -298,11 +302,15 @@ Do NOT start with "This document discusses" or "The document..."."""
             
             context, sources = self._build_context_with_sources(retrieved_nodes, question)
             
+            # FIXED: Dynamic max_tokens based on question type
+            is_simple_question = self._is_simple_question(question)
+            max_tokens = 80 if is_simple_question else 300
+            
             llm = Groq(
                 model="llama-3.1-8b-instant",
                 api_key=groq_api_key,
                 temperature=0.0,
-                max_tokens=300
+                max_tokens=max_tokens
             )
             
             prompt = self._get_answer_prompt(context, question, sentence_limit)
@@ -312,11 +320,10 @@ Do NOT start with "This document discusses" or "The document..."."""
             if not answer or len(answer.strip()) < 10:
                 error = "Unable to generate answer. Please rephrase."
                 if return_metadata:
-                    return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
+                    return AnswerResult(error, [])
                 return error
             
             answer = self._post_process_answer(answer, question)
-            # REMOVED: confidence = self._assess_confidence(retrieved_nodes, answer)
             is_negative_response = self._is_negative_response(answer)
             
             if sources and not is_negative_response:
@@ -325,7 +332,6 @@ Do NOT start with "This document discusses" or "The document..."."""
             result = AnswerResult(
                 answer=answer,
                 sources=list(sources) if not is_negative_response else []
-                # CHANGED: Removed confidence, retrieved_chunks, sentence_limit
             )
             
             return result if return_metadata else result.answer
@@ -333,7 +339,7 @@ Do NOT start with "This document discusses" or "The document..."."""
         except Exception as e:
             error = "Error processing question. Please try rephrasing."
             if return_metadata:
-                return AnswerResult(error, [])  # CHANGED: Removed confidence, chunks, limit
+                return AnswerResult(error, [])
             return error
     
     def _is_list_question(self, question: str) -> bool:
@@ -367,7 +373,6 @@ Do NOT start with "This document discusses" or "The document..."."""
         queries = [question]
         q = question.lower().strip()
         
-        # Generic transformations (no domain knowledge)
         if q.startswith("what is "):
             term = question[8:].strip()
             queries.append(f"define {term}")
@@ -386,14 +391,13 @@ Do NOT start with "This document discusses" or "The document..."."""
         if q.startswith("why "):
             queries.append(question.replace("why", "reasons for"))
         
-        # Remove filler words for better matching
         filler_words = ["the", "a", "an", "is", "are", "was", "were"]
         words = q.split()
         key_terms = " ".join([w for w in words if w not in filler_words])
         if key_terms != q:
             queries.append(key_terms)
         
-        return queries[:4]  # Keep top 4 variations
+        return queries[:4]
     
     def _hybrid_retrieve(self, queries: List[str]) -> List:
         """Hybrid retrieval with reranking"""
@@ -421,15 +425,13 @@ Do NOT start with "This document discusses" or "The document..."."""
         """Build context - adaptive based on question length"""
         question_words = len(question.split())
         
-        # IMPROVED: Dynamic context size based on question complexity
         if question_words < 5:
-            base_chars = 3000  # Simple question
+            base_chars = 3000
         elif question_words < 12:
-            base_chars = 5000  # Medium question
+            base_chars = 5000
         else:
-            base_chars = 7000  # Complex question
+            base_chars = 7000
         
-        # Mode adjustment
         max_context_chars = int(base_chars * 1.5) if self.mode == "academic" else base_chars
         
         context_parts = []
@@ -445,7 +447,6 @@ Do NOT start with "This document discusses" or "The document..."."""
             context_parts.append(txt)
             total_chars += len(txt)
             
-            # Extract source metadata with validation
             meta = node.node.metadata
             if meta:
                 filename = meta.get("filename", "")
@@ -453,7 +454,7 @@ Do NOT start with "This document discusses" or "The document..."."""
                 
                 if filename:
                     source_str = filename
-                    if page and str(page).isdigit():  # Validate page number
+                    if page and str(page).isdigit():
                         source_str += f" (p.{page})"
                     sources.add(source_str)
         
@@ -461,42 +462,41 @@ Do NOT start with "This document discusses" or "The document..."."""
         return context, sources
     
     def _get_answer_prompt(self, context: str, question: str, sentence_limit: int) -> str:
-        """Generate answer prompt with adaptive length based on question type"""
-    
-        # Detect question type for adaptive response length
-        question_lower = question.lower().strip()
-    
-        # Simple factual questions requiring brief answers
-        simple_triggers = [
-        'name', 'list', 'who sang', 'who wrote', 'who is', 'what is',
-        'what are', 'which', 'what year', 'when did', 'when was',
-        'how many', 'name a', 'name an', 'give me', 'tell me the'
-        ]
-    
-        is_simple = any(trigger in question_lower for trigger in simple_triggers)
-    
+        """Generate answer prompt with STRICT brevity control for simple questions"""
+        
+        is_simple = self._is_simple_question(question)
+        
         if is_simple:
-            instruction = """This is a SIMPLE FACTUAL question. Answer in 1-2 sentences MAXIMUM.
+            instruction = """🚨 CRITICAL: This is a SIMPLE FACTUAL question. You MUST answer in EXACTLY 1-2 sentences MAXIMUM.
 
-For "name/list" questions: Provide ONLY the requested items with minimal context.
-Examples:
-- "name 2 platforms" → "Spotify and Apple Music."
-- "who sang X" → "John Lennon sang 'Imagine.'"
-- "what year" → "The song was released in 1971."
+MANDATORY RULES:
+1. For "name/list" questions: State ONLY the items, NO explanations
+2. For "who/what/when" questions: Answer directly in ONE sentence
+3. NEVER add background context or extra information
+4. STOP after stating the fact
 
-Be direct and concise. Do NOT add unnecessary background information."""
+EXAMPLES OF CORRECT BREVITY:
+❌ WRONG: "Spotify and Apple Music are two notable platforms. They provide instant access..."
+✅ CORRECT: "Spotify and Apple Music."
+
+❌ WRONG: "Queen sang 'Bohemian Rhapsody.' The song was released in 1975 and became..."
+✅ CORRECT: "Queen sang 'Bohemian Rhapsody.'"
+
+❌ WRONG: "Nirvana and Pearl Jam are two bands. Nirvana emerged as a defining band..."
+✅ CORRECT: "Nirvana and Pearl Jam."
+
+BE EXTREMELY BRIEF. STOP AFTER ANSWERING."""
         else:
             instruction = """This is an EXPLANATORY question. Answer in 2-4 sentences.
 
 Provide specific details from the context to fully answer the question.
 Include relevant context and examples where applicable.
 Be comprehensive but concise."""
-    
-        # Add sentence limit for corporate mode if applicable
+        
         limit_instruction = ""
         if sentence_limit > 0 and not is_simple:
             limit_instruction = f"\nLimit your answer to {sentence_limit} sentences."
-    
+        
         prompt = f"""{instruction}{limit_instruction}
 
 IMPORTANT:
@@ -510,10 +510,8 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:"""
-    
+        
         return prompt
-
-
     
     def _academic_sentence_cap(self, question: str) -> int:
         """Sentence limit for academic mode"""
@@ -531,7 +529,30 @@ ANSWER:"""
         return 5
     
     def _post_process_answer(self, answer: str, question: str) -> str:
-        """Post-process answer"""
+        """Post-process answer with AGGRESSIVE truncation for simple questions"""
+        
+        # FIRST: Handle simple questions with extreme brevity
+        is_simple = self._is_simple_question(question)
+        
+        if is_simple:
+            sentences = re.split(r'(?<=[.!?])\s+', answer)
+            
+            # For list/name questions, try to keep just the list
+            question_lower = question.lower().strip()
+            if any(trigger in question_lower for trigger in ['name', 'list']):
+                # Keep only first sentence (the actual list)
+                answer = sentences[0].strip() if sentences else answer
+            else:
+                # For other simple questions, max 2 sentences
+                answer = " ".join(sentences[:2]).strip() if len(sentences) > 2 else answer
+            
+            # Ensure proper ending
+            if not answer.endswith(('.', '!', '?')):
+                answer += "."
+            
+            return answer.strip()
+        
+        # EXISTING logic for complex questions
         if self.mode == "corporate":
             sentence_limit = self._get_corporate_sentence_limit(question)
             sentences = re.split(r'(?<=[.!?])\s+', answer)
@@ -578,8 +599,6 @@ ANSWER:"""
                     answer = "\n\n".join(paragraphs)
         
         return answer.strip()
-    
-    # REMOVED: _assess_confidence() method entirely
 
 
 # =============================================================================
@@ -614,7 +633,6 @@ def load_documents(
                 docs = reader.load(file_path=path)
                 
                 for i, doc in enumerate(docs):
-                    # Sequential page numbering (most reliable)
                     page_num = i + 1
                     
                     doc.metadata = {
