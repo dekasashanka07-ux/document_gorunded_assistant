@@ -213,4 +213,232 @@ with st.sidebar:
                 continue
             
             # PDF page check
-            if file.name.lower().endswith('.pdf'):*
+            if file.name.lower().endswith('.pdf'):
+                file_bytes = file.read()
+                file.seek(0)  # Reset file pointer
+                page_error = validate_pdf_pages(file_bytes, file.name)
+                if page_error:
+                    validation_errors.append(page_error)
+    
+    # Display validation errors
+    if validation_errors:
+        for error in validation_errors:
+            st.error(error)
+        st.stop()
+    
+    st.divider()
+    
+    # Mode selection
+    st.header("⚙️ Configuration")
+    
+    doc_mode_label = st.selectbox(
+        "Answer Mode",
+        [
+            "Corporate (Business/Training - Crisp)",
+            "Academic (University/College - Detailed)"
+        ],
+        index=0,
+        help="Corporate: Short, actionable answers. Academic: Detailed explanations."
+    )
+    doc_mode = "academic" if "Academic" in doc_mode_label else "corporate"
+    
+    st.divider()
+    
+    # API Key
+    st.header("🔑 API Configuration")
+    
+    user_api_key = st.text_input(
+        "Groq API Key (Optional)",
+        type="password",
+        value="",
+        help="Enter your own key for unlimited usage. Leave empty to use limited fallback."
+    )
+    
+    if user_api_key:
+        groq_api_key = user_api_key
+        using_fallback = False
+        st.success("✓ Using your API key")
+    else:
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        using_fallback = True
+        st.info("ℹ️ Using fallback key (10 questions/day)")
+    
+    # Rate limiting for fallback
+    if using_fallback:
+        if 'query_count' not in st.session_state:
+            st.session_state.query_count = 0
+            st.session_state.last_reset = datetime.now().date()
+        
+        # Reset daily
+        if datetime.now().date() > st.session_state.last_reset:
+            st.session_state.query_count = 0
+            st.session_state.last_reset = datetime.now().date()
+        
+        # Display usage
+        remaining = 10 - st.session_state.query_count
+        st.metric("Questions Remaining Today", remaining)
+        
+        if st.session_state.query_count >= 10:
+            st.error("❌ Daily limit reached. Please add your own API key.")
+            st.stop()
+    
+    st.divider()
+    
+    # Initialize button
+    init_button = st.button(
+        "🚀 Initialize Assistant",
+        use_container_width=True,
+        type="primary"
+    )
+    
+    if init_button:
+        if not uploaded_files:
+            st.error("❌ Please upload at least one document.")
+        elif not groq_api_key:
+            st.error("❌ No API key available. Please enter your Groq API key.")
+        else:
+            try:
+                with st.spinner("⏳ Processing documents..."):
+                    # Create temp directory
+                    base_tmp = os.path.join(tempfile.gettempdir(), "doc_assistant")
+                    os.makedirs(base_tmp, exist_ok=True)
+                    
+                    folder_id = str(uuid.uuid4())[:8]
+                    doc_path = os.path.join(base_tmp, folder_id)
+                    os.makedirs(doc_path, exist_ok=True)
+                    
+                    # Save files
+                    file_paths = []
+                    for file in uploaded_files:
+                        file_bytes = file.read()
+                        dest_path = os.path.join(doc_path, file.name)
+                        
+                        with open(dest_path, "wb") as out:
+                            out.write(file_bytes)
+                        
+                        file_paths.append(dest_path)
+                    
+                    st.session_state.doc_folder = doc_path
+                    st.session_state.doc_count = len(file_paths)
+                
+                with st.spinner(f"🔧 Building index ({doc_mode} mode)..."):
+                    # Load documents
+                    documents = da.load_documents(file_paths)
+                    
+                    # Initialize assistant
+                    st.session_state.assistant = da.DocumentAssistant(
+                        documents,
+                        mode=doc_mode
+                    )
+                    st.session_state.current_mode = doc_mode
+                
+                st.session_state.initialized = True
+                
+                with st.spinner("📝 Generating summary..."):
+                    st.session_state.doc_summary = st.session_state.assistant.generate_summary(
+                        groq_api_key
+                    )
+                
+                st.success(f"✅ Initialized with {len(file_paths)} document(s) in {doc_mode.upper()} mode!")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Initialization failed: {str(e)}")
+                # Cleanup on failure
+                cleanup_temp_folder(st.session_state.doc_folder)
+                st.session_state.doc_folder = None
+
+# =============================================================================
+# ABOUT SECTION
+# =============================================================================
+with st.expander("ℹ️ About This Assistant", expanded=False):
+    readme_content = load_readme()
+    st.markdown(readme_content)
+
+# Display current configuration
+if st.session_state.initialized:
+    with st.expander("📊 Current Configuration", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"**Mode:** {st.session_state.current_mode.capitalize()}")
+            st.markdown(f"**Documents:** {st.session_state.doc_count}")
+        with col2:
+            st.markdown(f"**API:** {'Personal' if not using_fallback else 'Fallback'}")
+            if using_fallback:
+                st.markdown(f"**Queries Used:** {st.session_state.query_count}/10")
+
+# =============================================================================
+# DOCUMENT SUMMARY
+# =============================================================================
+if st.session_state.doc_summary is not None:
+    with st.expander("📄 Document Summary", expanded=False):
+        st.markdown(st.session_state.doc_summary)
+
+# =============================================================================
+# CHAT INTERFACE
+# =============================================================================
+if not st.session_state.initialized:
+    st.info("👈 **Get Started:** Upload documents in the sidebar and click 'Initialize Assistant'")
+    
+    # Show instructions
+    st.markdown("### How to Use")
+    st.markdown("""
+    1. **Upload** your documents (PDF, TXT, or DOCX)
+    2. **Select** answer mode (Corporate or Academic)
+    3. **Add** your Groq API key (optional, for unlimited use)
+    4. **Click** Initialize Assistant
+    5. **Ask** questions about your documents
+    """)
+    
+else:
+    # Display chat history
+    for role, msg in st.session_state.chat:
+        with st.chat_message(role):
+            st.markdown(msg)
+    
+    # Chat input
+    user_question = st.chat_input("💬 Ask a question about your documents...")
+    
+    if user_question:
+        # Add user message
+        st.session_state.chat.append(("user", user_question))
+        with st.chat_message("user"):
+            st.markdown(user_question)
+        
+        # Generate response
+        with st.chat_message("assistant"):
+            with st.spinner("🤔 Thinking..."):
+                try:
+                    answer = st.session_state.assistant.ask_question(
+                        user_question,
+                        groq_api_key
+                    )
+                    
+                    # Increment query count if using fallback
+                    if using_fallback:
+                        st.session_state.query_count += 1
+                    
+                except Exception as e:
+                    answer = f"❌ Error: {str(e)}\n\nPlease try rephrasing your question."
+            
+            st.markdown(answer)
+        
+        # Add assistant response to chat
+        st.session_state.chat.append(("assistant", answer))
+        st.rerun()
+
+# =============================================================================
+# FOOTER
+# =============================================================================
+st.markdown("""
+<hr style="margin-top: 2rem; margin-bottom: 0.5rem; border: 0; border-top: 1px solid #eee;" />
+<div style="text-align: center; font-size: 11px; color: #555; padding: 1rem 0;">
+    📄 Created &amp; developed by <strong style="color: #9e50ba;">Sashanka Deka</strong>
+    <span style="color: #999;"> | </span>
+    <a href="https://x.com/sashanka_d" target="_blank" style="color: #1DA1F2; text-decoration: none; margin: 0 4px;">𝕏</a>
+    <span style="color: #ccc; margin: 0 2px;">•</span>
+    <a href="https://substack.com/@sashankadeka" target="_blank" style="color: #FF6719; text-decoration: none; margin: 0 4px;">Substack</a>
+    <span style="color: #ccc; margin: 0 2px;">•</span>
+    <a href="https://www.linkedin.com/in/sashanka-deka" target="_blank" style="color: #0077B5; text-decoration: none; margin: 0 4px;">LinkedIn</a>
+</div>
+""", unsafe_allow_html=True)
