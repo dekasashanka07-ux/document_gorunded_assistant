@@ -1,6 +1,6 @@
 """
 Enhanced Document Assistant - Streamlit App V2
-Production-ready with improved UX, progress tracking, and confidence display
+Production-ready with improved UX, progress tracking, and coverage indicator
 """
 import streamlit as st
 import os
@@ -68,7 +68,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# CHANGED: Removed confidence-related CSS, kept coverage indicator styling
 st.markdown("""
 <style>
     .main-title {
@@ -105,26 +105,22 @@ st.markdown("""
         background-color: #f8d7da;
         color: #721c24;
     }
-    .confidence-high {
-        color: #28a745;
-        font-weight: 600;
-    }
-    .confidence-medium {
-        color: #ffc107;
-        font-weight: 600;
-    }
-    .confidence-low {
-        color: #dc3545;
-        font-weight: 600;
-    }
-    .meta-info {
+    .coverage-info {
         font-size: 0.85rem;
-        color: #6c757d;
         margin-top: 0.5rem;
         padding: 0.5rem;
-        background-color: #f8f9fa;
         border-radius: 0.25rem;
         border-left: 3px solid #007bff;
+    }
+    .coverage-success {
+        background-color: #d4edda;
+        color: #155724;
+        border-left-color: #28a745;
+    }
+    .coverage-info-neutral {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        border-left-color: #17a2b8;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -399,6 +395,35 @@ if st.session_state.doc_summary is not None:
         st.markdown(st.session_state.doc_summary)
 
 # =============================================================================
+# HELPER FUNCTION FOR COVERAGE INDICATOR
+# =============================================================================
+def get_coverage_indicator(answer: str, sources: list) -> tuple:
+    """
+    Generate coverage indicator based on answer content and sources
+    Returns: (html_string, css_class)
+    """
+    # Check for negative response indicators
+    negative_phrases = [
+        "not covered in the documents",
+        "not addressed in the documents",
+        "not mentioned in the documents",
+        "not found in the documents",
+        "doesn't provide information",
+        "this topic is not covered",
+        "this information is not available"
+    ]
+    
+    has_negative = any(phrase in answer.lower() for phrase in negative_phrases)
+    unique_sources = len(sources)
+    
+    if has_negative or unique_sources == 0:
+        return "📋 <strong>Topic not covered in provided documents</strong>", "coverage-info-neutral"
+    elif unique_sources == 1:
+        return "✅ <strong>Found in 1 document section</strong>", "coverage-success"
+    else:
+        return f"✅ <strong>Found in {unique_sources} document sections</strong>", "coverage-success"
+
+# =============================================================================
 # CHAT INTERFACE
 # =============================================================================
 if not st.session_state.initialized:
@@ -414,7 +439,7 @@ if not st.session_state.initialized:
     """)
     
 else:
-    # Display chat history with metadata
+    # CHANGED: Display chat history with coverage indicator
     for item in st.session_state.chat:
         role = item["role"]
         msg = item["message"]
@@ -422,32 +447,11 @@ else:
         with st.chat_message(role):
             st.markdown(msg)
             
-            # Display metadata for assistant responses
-            if role == "assistant" and "metadata" in item:
-                meta = item["metadata"]
-                
-                # Confidence indicator
-                confidence = meta.get("confidence", "unknown")
-                conf_class = f"confidence-{confidence}"
-                conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
-                
-                # Build metadata display
-                meta_parts = [f"{conf_emoji} **Confidence:** <span class='{conf_class}'>{confidence.upper()}</span>"]
-                
-                # Add chunks info
-                chunks = meta.get("retrieved_chunks", 0)
-                if chunks > 0:
-                    meta_parts.append(f"📦 **Chunks:** {chunks}")
-                
-                # Add sentence limit info (corporate mode only)
-                if st.session_state.current_mode == "corporate":
-                    sentence_limit = meta.get("sentence_limit", 0)
-                    if sentence_limit > 0:
-                        meta_parts.append(f"📏 **Limit:** {sentence_limit} sentences")
-                
-                meta_html = " | ".join(meta_parts)
+            # Display coverage indicator for assistant responses
+            if role == "assistant" and "coverage" in item:
+                coverage_html, coverage_class = item["coverage"]
                 st.markdown(
-                    f'<div class="meta-info">{meta_html}</div>',
+                    f'<div class="coverage-info {coverage_class}">{coverage_html}</div>',
                     unsafe_allow_html=True
                 )
     
@@ -464,7 +468,7 @@ else:
         with st.chat_message("user"):
             st.markdown(user_question)
         
-        # Generate response with metadata
+        # CHANGED: Generate response with coverage indicator
         with st.chat_message("assistant"):
             with st.spinner("🤔 Thinking..."):
                 try:
@@ -476,6 +480,7 @@ else:
                     )
                     
                     answer = result.answer
+                    sources = result.sources
                     
                     # Increment query count if using fallback
                     if using_fallback:
@@ -483,45 +488,23 @@ else:
                     
                 except Exception as e:
                     answer = f"❌ Error: {str(e)}\n\nPlease try rephrasing your question."
-                    result = da.AnswerResult(
-                        answer=answer,
-                        sources=[],
-                        confidence="low",
-                        retrieved_chunks=0,
-                        sentence_limit=0
-                    )
+                    sources = []
             
             # Display answer
             st.markdown(answer)
             
-            # Display metadata
-            confidence = result.confidence
-            conf_class = f"confidence-{confidence}"
-            conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
-            
-            meta_parts = [f"{conf_emoji} **Confidence:** <span class='{conf_class}'>{confidence.upper()}</span>"]
-            
-            if result.retrieved_chunks > 0:
-                meta_parts.append(f"📦 **Chunks:** {result.retrieved_chunks}")
-            
-            if st.session_state.current_mode == "corporate" and result.sentence_limit > 0:
-                meta_parts.append(f"📏 **Limit:** {result.sentence_limit} sentences")
-            
-            meta_html = " | ".join(meta_parts)
+            # CHANGED: Display coverage indicator instead of confidence/chunks/limit
+            coverage_html, coverage_class = get_coverage_indicator(answer, sources)
             st.markdown(
-                f'<div class="meta-info">{meta_html}</div>',
+                f'<div class="coverage-info {coverage_class}">{coverage_html}</div>',
                 unsafe_allow_html=True
             )
         
-        # Add assistant response to chat with metadata
+        # CHANGED: Add assistant response to chat with coverage indicator
         st.session_state.chat.append({
             "role": "assistant",
             "message": answer,
-            "metadata": {
-                "confidence": result.confidence,
-                "retrieved_chunks": result.retrieved_chunks,
-                "sentence_limit": result.sentence_limit
-            }
+            "coverage": (coverage_html, coverage_class)
         })
         
         st.rerun()
