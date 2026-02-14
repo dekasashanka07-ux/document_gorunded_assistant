@@ -30,7 +30,7 @@ from llama_index.core.postprocessor import (
 # GLOBAL SETTINGS
 # =============================================================================
 Settings.embed_model = HuggingFaceEmbedding(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_name="sentence-transformers/BAAI/bge-small-en-v1.5",
     cache_folder="./embeddings_cache"
 )
 
@@ -568,31 +568,33 @@ ANSWER:"""
         return answer.strip()
     
     def _assess_confidence(self, nodes: List, answer: str) -> str:
-        """Assess confidence with relaxed thresholds"""
+        """Assess confidence with balanced thresholds"""
         if not nodes:
             return "low"
-        
+    
         top_scores = [n.score for n in nodes[:3] if hasattr(n, 'score')]
         if not top_scores:
             return "medium"
-        
+    
         avg_score = sum(top_scores) / len(top_scores)
-        
+    
         # Check for uncertainty phrases
-        uncertainty = ["not covered", "doesn't provide", "not mentioned", "not addressed"]
+        uncertainty = ["not covered", "doesn't provide", "not mentioned", 
+                   "not addressed", "doesn't explicitly", "can be inferred"]
         has_uncertainty = any(p in answer.lower() for p in uncertainty)
-        
+    
         chunk_count = len(nodes)
         word_count = len(answer.split())
-        
-        # RELAXED THRESHOLDS (improved from strict version)
-        if avg_score > 0.60 and chunk_count >= 3 and not has_uncertainty and word_count > 25:
+        has_sources = chunk_count >= 2
+    
+    # BALANCED THRESHOLDS
+        if avg_score > 0.55 and chunk_count >= 3 and not has_uncertainty and word_count > 20:
             return "high"
-        elif avg_score > 0.40 and chunk_count >= 2 and word_count > 15:
-            return "medium"
+        elif (avg_score > 0.35 and has_sources and word_count > 12) or \
+         (avg_score > 0.45 and chunk_count >= 2):
+             return "medium"
         else:
             return "low"
-
 
 # =============================================================================
 # DOCUMENT LOADER
