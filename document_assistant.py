@@ -233,13 +233,15 @@ class DocumentAssistant:
     
     def _get_summary_prompt(self, context: str) -> str:
         """Get summary prompt"""
-        base = """Create a concise summary (100-150 words).
-Focus on main themes. No bullet points. Natural language.
-Do NOT start with "This document discusses"."""
-        
-        specific = "\nBusiness focus." if self.mode == "corporate" else "\nAcademic focus."
-        
+        base = """Create a single-paragraph summary (100-120 words max).
+Focus ONLY on the main topic and key themes.
+Use natural, flowing prose - no lists or segmentation.
+Do NOT start with "This document discusses" or "The document..."."""
+    
+        specific = "\nBusiness focus: What's the document about and why it matters." if self.mode == "corporate" else "\nAcademic focus: Core arguments and contributions."
+    
         return f"{base}{specific}\n\nDOCUMENT:\n{context}\n\nSUMMARY:"
+
     
     def _get_corporate_sentence_limit(self, question: str) -> int:
         """Determine sentence limit for corporate mode"""
@@ -458,37 +460,49 @@ Do NOT start with "This document discusses"."""
         context = "\n\n---\n\n".join(context_parts)
         return context, sources
     
-    def _get_answer_prompt(self, context: str, question: str, sentence_limit: int = 0) -> str:
-        """Get answer prompt"""
-        if self.mode == "corporate":
-            return f"""You are a precise document assistant. Answer ONLY using the context.
+    def _get_answer_prompt(self, context: str, question: str, sentence_limit: int) -> str:
+        """Generate answer prompt with adaptive length based on question type"""
+    
+        # Detect question type for adaptive response length
+        question_lower = question.lower().strip()
+    
+        # Simple factual questions requiring brief answers
+        simple_triggers = [
+        'name', 'list', 'who sang', 'who wrote', 'who is', 'what is',
+        'what are', 'which', 'what year', 'when did', 'when was',
+        'how many', 'name a', 'name an', 'give me', 'tell me the'
+        ]
+    
+        is_simple = any(trigger in question_lower for trigger in simple_triggers)
+    
+        if is_simple:
+            instruction = """This is a SIMPLE FACTUAL question. Answer in 1-2 sentences MAXIMUM.
 
-RULES:
-1. Maximum {sentence_limit} sentences
-2. No bullet points - use prose
-3. For lists: Cover ALL items briefly
-4. If partial: "The document mentions [X] but doesn't provide details on [Y]."
-5. If not found: "This information is not covered in the documents."
-6. NO external knowledge
-7. Be direct - no "According to..."
+For "name/list" questions: Provide ONLY the requested items with minimal context.
+Examples:
+- "name 2 platforms" → "Spotify and Apple Music."
+- "who sang X" → "John Lennon sang 'Imagine.'"
+- "what year" → "The song was released in 1971."
 
-CONTEXT:
-{context}
-
-QUESTION: {question}
-
-ANSWER (max {sentence_limit} sentences):"""
-        
+Be direct and concise. Do NOT add unnecessary background information."""
         else:
-            cap = self._academic_sentence_cap(question)
-            return f"""Academic assistant. Detailed answer using ONLY the context.
+            instruction = """This is an EXPLANATORY question. Answer in 2-4 sentences.
 
-REQUIREMENTS:
-- 2-3 paragraphs for complex topics
-- Max {cap} sentences
-- If incomplete: "The document covers [X] but not [Y]."
-- If not covered: "This topic is not covered."
-- NO external knowledge
+Provide specific details from the context to fully answer the question.
+Include relevant context and examples where applicable.
+Be comprehensive but concise."""
+    
+        # Add sentence limit for corporate mode if applicable
+        limit_instruction = ""
+        if sentence_limit > 0 and not is_simple:
+            limit_instruction = f"\nLimit your answer to {sentence_limit} sentences."
+    
+        prompt = f"""{instruction}{limit_instruction}
+
+IMPORTANT:
+- Base your answer ONLY on the document context below
+- If the answer isn't in the context, state this clearly in ONE sentence
+- Do NOT make up information or add details not present in the context
 
 CONTEXT:
 {context}
@@ -496,6 +510,10 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:"""
+    
+        return prompt
+
+
     
     def _academic_sentence_cap(self, question: str) -> int:
         """Sentence limit for academic mode"""
