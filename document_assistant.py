@@ -327,9 +327,31 @@ Do NOT start with "This document discusses" or "The document..."."""
             
             # FIXED: Filter sources based on answer content
             filtered_sources = self._filter_relevant_sources(answer, source_map, question)
-            
+
+            # Add accurate source attribution with multi-doc awareness
             if filtered_sources and not is_negative_response:
-                answer += f"\n\n📚 Sources: {', '.join(sorted(filtered_sources))}"
+                # Count unique documents
+                unique_docs = set()
+                for source_str in filtered_sources:
+                    # Extract document name (before " (p.")
+                    doc_name = source_str.split(' (p.')[0] if ' (p.' in source_str else source_str
+                    unique_docs.add(doc_name)
+    
+                # CASE 1: Multiple documents - show document names with section counts
+                if len(unique_docs) > 1:
+                    doc_citations = []
+                    for doc in sorted(unique_docs):
+                        # Count sections from this doc
+                        doc_sections = [s for s in filtered_sources if s.startswith(doc)]
+                        count = len(doc_sections)
+                        doc_citations.append(f"{doc} ({count} section{'s' if count != 1 else ''})")
+                    answer += f"\n\n📚 Sources: {', '.join(doc_citations)}"
+    
+                # CASE 2: Single document - show section count only
+                else:
+                    section_count = len(filtered_sources)
+                    answer += f"\n\n✅ Found in {section_count} document section{'s' if section_count != 1 else ''}"
+
             
             result = AnswerResult(
                 answer=answer,
