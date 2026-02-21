@@ -69,23 +69,27 @@ def get_answer_prompt(
     Build the LLM prompt for corporate mode answers.
     [P6] Enforces exact document terminology throughout.
     """
+    # ✅ AFTER — replace the entire is_list_q block with this:
     if is_list_q:
         instruction = (
             "You are answering a LIST or ENUMERATION question.\n\n"
             "MANDATORY RULES:\n"
-            "1. List EVERY item mentioned in the context — do NOT stop after 1-3 items.\n"
+            "1. List ONLY the TOP-LEVEL items that DIRECTLY answer the question.\n"
+            "   Do NOT include sub-items, descriptions, or characteristics of each item.\n"
             "2. Use EXACTLY the same names and labels that appear in the document context.\n"
             "   Do NOT rename, relabel, or reorder styles/categories/eras.\n"
             "3. Present each item on a new line or as a numbered list.\n"
-            "4. After listing ALL items, you may add ONE brief sentence of context.\n"
-            "5. NEVER omit items that appear in the context.\n\n"
+            "4. STOP immediately after the last list item — NO trailing sentences,\n"
+            "   NO summary, NO concluding remarks, NO context sentences.\n"
+            "5. NEVER omit top-level items that appear in the context.\n\n"
             "EXAMPLE FORMAT:\n"
             "The major eras are:\n"
             "1. Early Rock and Roll (1950s)\n"
             "2. British Invasion (1960s)\n"
             "3. Classic Rock (1970s)\n"
-            "...(continue until ALL items are listed)"
+            "(STOP HERE — do not add any sentence after the last item)"
         )
+
     elif is_simple:
         instruction = (
             "CRITICAL: This is a SIMPLE FACTUAL question. "
