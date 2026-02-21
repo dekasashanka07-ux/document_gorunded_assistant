@@ -335,6 +335,15 @@ class DocumentAssistant:
                 retrieved_nodes, question, wide=is_list_q
             )
 
+            # ── TEMPORARY DIAGNOSTIC — remove before release ──────────────────────
+            print(f"\n{'='*60}")
+            print(f"[DEBUG] Question   : {question}")
+            print(f"[DEBUG] is_list_q  : {is_list_q} | is_simple: {is_simple}")
+            print(f"[DEBUG] Nodes fetched: {len(retrieved_nodes)}")
+            print(f"[DEBUG] Context preview:\n{context[:600]}")
+            print(f"{'='*60}\n")
+            # ── END DIAGNOSTIC ────────────────────────────────────────────────────
+ 
             # ── [P2/P3] Token budget ──────────────────────────────────────────
             if is_list_q:
                 max_tokens = 500   # was 300 — allows full enumeration
