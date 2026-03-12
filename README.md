@@ -102,6 +102,16 @@ Want to share the app online for free?
 
 For detailed steps, see: https://docs.streamlit.io/deploy/streamlit-community-cloud
 
+| Component              | Technology                                        |
+| ---------------------- | ------------------------------------------------- |
+| UI Framework           | Streamlit                                         |
+| Retrieval Architecture | PageIndex (two-level: page summary + chunk store) |
+| Embedding Model        | BAAI/bge-small-en-v1.5 via HuggingFace            |
+| LLM                    | llama-3.1-8b-instant via Groq API                 |
+| PDF Extraction         | PyMuPDF (fitz)                                    |
+| DOCX Extraction        | python-docx                                       |
+| Vector Index           | LlamaIndex VectorStoreIndex                       |
+
 ## License
 
 MIT License – feel free to fork, modify, and share.
