@@ -84,7 +84,7 @@ Groq gives fast, free access to powerful AI models like Llama-3.1-8B (the brain 
 5. Give it a name (e.g., "My Document Assistant").  
 6. Click **Submit** or **Create**.  
 7. Copy the key (it starts with `gsk_...`) — paste it into the sidebar box in the app when asked.  
-   - Keep it private—don't share it.  
+   - Keep it private—do not share it.  
    - If you lose it, just create a new one.
 
 Free tier has generous daily limits for personal use. For heavy usage, upgrade is optional.
