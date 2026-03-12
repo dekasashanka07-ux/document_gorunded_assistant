@@ -31,3 +31,5 @@ Thumbs.db
 
 requirements_full.txt.embeddings_cache/ 
 storage/ 
+embeddings_cache/ 
+__pycache__/ 
