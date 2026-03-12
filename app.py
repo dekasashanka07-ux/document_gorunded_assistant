@@ -79,6 +79,53 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* ── Main app background ── */
+    .stApp {
+        background-color: #0D1B2A !important;
+    }
+    .stApp > header {
+        background-color: #0D1B2A !important;
+    }
+    [data-testid="stAppViewContainer"] {
+        background-color: #0D1B2A !important;
+    }
+    [data-testid="stAppViewBody"] {
+        background-color: #0D1B2A !important;
+    }
+    [data-testid="stMain"] {
+        background-color: #0D1B2A !important;
+    }
+    .main .block-container {
+        background-color: #0D1B2A !important;
+    }
+
+    /* ── Sidebar background ── */
+    [data-testid="stSidebar"] {
+        background-color: #1A2C42 !important;
+    }
+    [data-testid="stSidebar"] > div {
+        background-color: #1A2C42 !important;
+    }
+    [data-testid="stSidebarContent"] {
+        background-color: #1A2C42 !important;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #1A2C42 !important;
+    }
+
+    /* ── Sidebar text visibility ── */
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] .stMarkdown,
+    [data-testid="stSidebar"] div {
+        color: #D6E4F0 !important;
+    }
+
+    /* ── Existing styles (unchanged) ── */
     .main-title {
         white-space: nowrap;
         font-size: 2.2rem;
@@ -132,6 +179,8 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
 
 # =============================================================================
 # SESSION STATE INITIALISATION
@@ -381,17 +430,19 @@ if st.session_state.doc_summary is not None:
 # COVERAGE INDICATOR HELPER
 # =============================================================================
 def get_coverage_indicator(answer: str, sources: list) -> tuple:
-    """
-    Returns (html_string, css_class) for the coverage badge.
-    """
+    # ✅ Match exactly what _is_negative_response uses
     negative_phrases = [
-        "not covered in the documents",
-        "not addressed in the documents",
-        "not mentioned in the documents",
-        "not found in the documents",
-        "doesn't provide information",
-        "this topic is not covered",
-        "this information is not available"
+        "not covered",
+        "not mentioned",
+        "no information",
+        "cannot find",
+        "not available",
+        "not provided",
+        "does not contain",
+        "i don't know",
+        "i do not know",
+        "not found in",
+        "outside the scope",
     ]
     has_negative   = any(p in answer.lower() for p in negative_phrases)
     unique_sources = len(sources)
@@ -408,6 +459,7 @@ def get_coverage_indicator(answer: str, sources: list) -> tuple:
             f"✅ <strong>Found in {unique_sources} document sections</strong>",
             "coverage-success"
         )
+
 
 # =============================================================================
 # CHAT INTERFACE
@@ -428,6 +480,10 @@ else:
     for item in st.session_state.chat:
         with st.chat_message(item["role"]):
             st.markdown(item["message"])
+            if item["role"] == "assistant" and item.get("sources"):
+                st.divider()
+                pages_str = "  •  ".join(item["sources"])
+                st.caption(f"📄 **Sources:** {pages_str}")
 
     # ── Chat input ────────────────────────────────────────────────────────────
     user_question = st.chat_input("💬 Ask a question about your documents...")
@@ -460,6 +516,12 @@ else:
             # Display answer
             st.markdown(answer)
 
+            # ── Source pages ──────────────────────────────────────────────────
+            if sources:
+                st.divider()
+                pages_str = "  •  ".join(sources)
+                st.caption(f"📄 **Sources:** {pages_str}")
+
             # Coverage indicator (only shown live, not stored in history)
             coverage_html, coverage_class = get_coverage_indicator(answer, sources)
             st.markdown(
@@ -467,9 +529,14 @@ else:
                 unsafe_allow_html=True
             )
 
-        # Store assistant message (plain text only — no HTML in history)
-        st.session_state.chat.append({"role": "assistant", "message": answer})
+        # Store assistant message with sources
+        st.session_state.chat.append({
+            "role":    "assistant",
+            "message": answer,
+            "sources": sources
+        })
         st.rerun()
+
 
 # =============================================================================
 # FOOTER
