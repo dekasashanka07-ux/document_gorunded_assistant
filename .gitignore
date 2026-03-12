@@ -29,4 +29,5 @@ Thumbs.db
 # Temp files
 *.tmp
 
-requirements_full.txt
+requirements_full.txt.embeddings_cache/ 
+storage/ 
