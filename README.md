@@ -18,33 +18,50 @@ You select the mode once when initializing—no need to switch mid-chat.
 
 ## Key Features
 
-- **Strict Grounding** — Answers only use text directly from your documents. If the info isn't there, it clearly says: "Not covered in the documents." The assistant does not infer beyond the provided material.
-- **Hybrid Retrieval** — Combines semantic search + keyword matching for better accuracy on complex or fragmented layouts (slides, tables, dense text).
-- **Smart Document Handling** — Supports PDF (clean text extraction), TXT, DOCX. Semantic chunking keeps context meaningful.
-- **Summary Generation** — Auto-creates a concise ~120-word overview of the core content (ignores tables of contents, objectives, glossaries).
-- **Bring Your Own Groq API Key (BYOGAK)** — Use your free Groq key for unlimited questions; fallback to a simple 10 questions/day limit if no key is provided (prevents abuse on free hosting).
-- **Deterministic Responses** — Temperature = 0.0 and constrained prompt engineering reduce variation and prevent speculative answers.
+- **PageIndex Retrieval** — Two-level hierarchical retrieval: page-level summary index + chunk-level store. Queries hit page summaries first, then fetch only relevant chunks from matched pages — producing coherent, page-bounded context for the LLM rather than scattered fragments.
+
+- **Accurate Page Citations** — Both Corporate and Academic modes report the exact page numbers the LLM drew from, not all retrieved pages. Academic mode cites pages as `Page 3 • Page 7`. Corporate mode does the same.
+
+- **Strict Grounding** — Answers only use text directly from your documents. If the info isn't there, it clearly says *"This information is not covered in the provided documents."* The assistant does not infer beyond the provided material.
+
+- **Two Answer Tiers per Mode**  
+  - *Corporate:* Fact / List / Comparison / Explanation — each with its own format and length rules  
+  - *Academic:* Short / Default / Long — scaling from 3-sentence definitions to 2-paragraph scholarly analysis
+
+- **Smart Document Handling** — Supports PDF (native page boundaries via PyMuPDF), TXT, and DOCX (500-word page windows). Structural pages like table of contents and index pages are automatically filtered out.
+
+- **Summary Generation** — Auto-creates a concise overview of the core content on initialization. Ignores tables of contents, objectives, and glossaries.
+
+- **Bring Your Own Groq API Key (BYOGAK)** — Use your free Groq key for unlimited questions. Falls back to a 10 questions/day limit if no key is provided — prevents abuse on free hosting.
+
+- **Deterministic Responses** — Temperature 0.0 and constrained prompt engineering reduce variation and prevent speculative answers.
+
+---
 
 ## Known Limitations
 
 - Very visual PDFs (heavy images, complex overlays) may lose minor details during text extraction.
-- While grounding minimizes errors, responses depend on document quality and extraction accuracy, so results may not always be perfectly precise.
-- Free Groq tier has rate limits—use your own key for heavy use.
-- App is single-session; multi-user needs paid hosting.
+- While grounding minimises errors, responses depend on document quality and extraction accuracy — results may not always be perfectly precise.
+- Free Groq tier has rate limits — use your own key for heavy use. `llama-3.1-8b-instant` is used by default (separate 1M token daily limit).
+- App is single-session — multi-user needs paid hosting.
+
+---
 
 ## Data Handling
 
 - Documents are processed only within the running session.
 - They are not stored for training or shared across users.
 - The assistant only receives extracted text required to answer a query.
-- Closing or resetting the app removes the session data.
+- Closing or resetting the app removes all session data.
 
-## Installation & Local Run (For Developers)
+---
 
-1. Clone the repo:  
-   ```bash
-   git clone https://github.com/dekasashanka07-ux/document_grounded_assistant.git
-   cd document_grounded_assistant
+## Installation & Local Run
+
+1. Clone the repo
+```bash
+git clone https://github.com/dekasashanka/07-ux-document-grounded-assistant.git
+cd document-grounded-assistant
 
 2. Install dependencies:
    ```bash
