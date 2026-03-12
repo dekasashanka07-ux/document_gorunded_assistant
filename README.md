@@ -102,6 +102,8 @@ Want to share the app online for free?
 
 For detailed steps, see: https://docs.streamlit.io/deploy/streamlit-community-cloud
 
+##Tech Stack
+
 | Component              | Technology                                        |
 | ---------------------- | ------------------------------------------------- |
 | UI Framework           | Streamlit                                         |
