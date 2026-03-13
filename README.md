@@ -9,7 +9,7 @@ This app is designed for reading and verifying information in reports, policies,
 The app offers **two tailored modes** to match different document types and user needs:
 
 - **Corporate Mode** (default for business/policy/training docs)  
-  Gives crisp, professional answers using bullets, lists, numbered steps, and short paragraphs. Ideal for quick scans of reports, guidelines, contracts, or training materials where clarity and structure matter most.
+  Gives crisp, professional answers in numbered lists, structured comparisons, and short factual paragraphs. Ideal for quick scans of reports, guidelines, contracts, or training materials where clarity and structure matter most.
 
 - **Academic Mode** (for university notes, textbooks, learning modules, essays)  
   Delivers detailed, natural paragraphs with proper sentence flow, logical breaks, and controlled length (e.g., limited sentences for definitions, more for explanations). Presents document-grounded answers in clear explanatory paragraphs suited for study material, with controlled length for readability.
@@ -42,6 +42,7 @@ You select the mode once when initializing—no need to switch mid-chat.
 
 - Very visual PDFs (heavy images, complex overlays) may lose minor details during text extraction.
 - While grounding minimises errors, responses depend on document quality and extraction accuracy — results may not always be perfectly precise.
+- Due to strict anti-hallucination guardrails, the assistant may occasionally decline to answer a question it could otherwise address. If you get a "not covered" response, try rephrasing — a slightly different wording often retrieves the right answer.
 - Free Groq tier has rate limits — use your own key for heavy use. `llama-3.1-8b-instant` is used by default (separate 1M token daily limit).
 - App is single-session — multi-user needs paid hosting.
 
@@ -102,7 +103,7 @@ Want to share the app online for free?
 
 For detailed steps, see: https://docs.streamlit.io/deploy/streamlit-community-cloud
 
-##Tech Stack
+## Tech Stack
 
 | Component              | Technology                                        |
 | ---------------------- | ------------------------------------------------- |
