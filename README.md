@@ -63,14 +63,17 @@ You select the mode once when initializing—no need to switch mid-chat.
 ```bash
 git clone https://github.com/dekasashanka/07-ux-document-grounded-assistant.git
 cd document-grounded-assistant
+```
 
 2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
+```bash
+pip install -r requirements.txt
+```
    
 3. Run the app:
-   ```bash
-   streamlit run app.py
+```bash
+streamlit run app.py
+```
 
 Upload documents via the sidebar, choose mode, initialize, and start asking questions.
 
